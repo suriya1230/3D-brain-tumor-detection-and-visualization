@@ -1,0 +1,2 @@
+case_id,pred_voxel_mm3,pred_NETC_voxels,pred_NETC_cc,pred_SNFH_voxels,pred_SNFH_cc,pred_ET_voxels,pred_ET_cc,pred_RC_voxels,pred_RC_cc,pred_TC_voxels,pred_TC_cc,pred_WT_voxels,pred_WT_cc,pred_ET_fraction_of_WT,pred_NETC_fraction_of_TC,gt_NETC_cc,gt_SNFH_cc,gt_ET_cc,gt_RC_cc,gt_TC_cc,gt_WT_cc,WT_abs_error_cc
+BraTS-GLI-02216-100,1.0,243,0.243,37031,37.031,4391,4.391,1555,1.555,4634,4.634,41665,41.665,0.1054,0.0524,0.0,36.228,4.202,1.471,4.202,40.43,1.235

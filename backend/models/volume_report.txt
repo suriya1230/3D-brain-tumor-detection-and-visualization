@@ -1,0 +1,16 @@
+====================================================================
+TUMOUR VOLUME REPORT
+====================================================================
+
+Case: BraTS-GLI-02216-100
+  voxel volume           : 1.000 mm^3
+  Whole Tumour     (WT)  :    41.66 cc
+  Tumour Core      (TC)  :     4.63 cc
+  Enhancing tissue (ET)  :     4.39 cc
+  Non-enh. core  (NETC)  :     0.24 cc
+  FLAIR hyperint.(SNFH)  :    37.03 cc
+  Resection cavity (RC)  :     1.55 cc
+  ET / WT ratio          : 0.105
+  [reference WT]         :    40.43 cc (|error| = 1.24 cc)
+
+====================================================================
