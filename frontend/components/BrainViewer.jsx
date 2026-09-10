@@ -3,14 +3,16 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
+import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { INK, REGION } from "./theme";
 
 /* ------------------------------------------------- x-ray fresnel material */
-function useFresnel(color, { power = 2.4, strength = 1.0 } = {}) {
+function useFresnel(color, { power = 2.4, strength = 1.0, depthTest = true } = {}) {
   return useMemo(
     () =>
       new THREE.ShaderMaterial({
+        depthTest,
         uniforms: {
           uColor: { value: new THREE.Color(color) },
           uPower: { value: power },
@@ -34,61 +36,399 @@ function useFresnel(color, { power = 2.4, strength = 1.0 } = {}) {
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
-        side: THREE.DoubleSide,
+        side: THREE.FrontSide,
       }),
-    [color, power, strength]
+    [color, power, strength, depthTest]
   );
 }
 
-function Brain({ url, visible, wire }) {
+/* --------------------------------------------------- screen-space backdrop */
+// Drawn in-scene rather than as CSS behind a transparent canvas: the bloom
+// pass renders to its own target, and an alpha canvas comes back empty.
+function Backdrop() {
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uInner: { value: new THREE.Color(INK.halo) },
+          uMid: { value: new THREE.Color(INK.deep) },
+          uOuter: { value: new THREE.Color(INK.void) },
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = vec4(position.xy, 1.0, 1.0);
+          }`,
+        fragmentShader: `
+          uniform vec3 uInner; uniform vec3 uMid; uniform vec3 uOuter;
+          varying vec2 vUv;
+          void main() {
+            vec2 p = (vUv - vec2(0.5, 0.52)) * vec2(1.35, 1.0);
+            float d = clamp(length(p) * 1.85, 0.0, 1.0);
+            vec3 c = mix(uInner, uMid, smoothstep(0.0, 0.5, d));
+            c = mix(c, uOuter, smoothstep(0.45, 1.0, d));
+            gl_FragColor = vec4(c, 1.0);
+          }`,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    []
+  );
+
+  return (
+    <mesh material={material} frustumCulled={false} renderOrder={-1000}>
+      <planeGeometry args={[2, 2]} />
+    </mesh>
+  );
+}
+
+/* --------------------------------------------------- deterministic random */
+// Seeded so node placement and pulse phases stay identical across re-renders;
+// a fresh Math.random() set on every render makes the glow visibly jump.
+function mulberry32(seed) {
+  let a = seed;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// The backend exports POSITION and indices only, so anything that shades by
+// normal (the fresnel shell, the tumour's standard material) gets a zero
+// vector and renders as a flat blown-out silhouette until these exist.
+function ensureNormals(geometry) {
+  if (geometry && !geometry.attributes.normal) geometry.computeVertexNormals();
+  return geometry;
+}
+
+function sampleSurface(geometry, count) {
+  const pos = geometry.attributes.position;
+  const nor = geometry.attributes.normal;
+  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+  const centre = geometry.boundingSphere.center;
+  const total = pos.count;
+  const stride = Math.max(1, Math.floor(total / count));
+  const v = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  const out = [];
+  for (let i = 0; i < total && out.length < count; i += stride) {
+    v.fromBufferAttribute(pos, i);
+    if (nor) n.fromBufferAttribute(nor, i).normalize();
+    else n.copy(v).sub(centre).normalize();
+    out.push({ p: v.clone(), n: n.clone() });
+  }
+  return out;
+}
+
+/* --------------------------------------------------------- glow sprite map */
+function useGlowSprite() {
+  return useMemo(() => {
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const g = ctx.createRadialGradient(
+      size / 2, size / 2, 0,
+      size / 2, size / 2, size / 2
+    );
+    g.addColorStop(0.0, "rgba(255,255,255,1)");
+    g.addColorStop(0.18, "rgba(255,255,255,0.85)");
+    g.addColorStop(0.42, "rgba(255,255,255,0.28)");
+    g.addColorStop(1.0, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }, []);
+}
+
+const NODE_COOL = ["#a8f4ff", "#ffffff", "#6fe0ff", "#d6faff"];
+// Warm accents read as "firing" without borrowing the crimson the ET overlay
+// uses, so a hotspot can never be mistaken for enhancing tumour.
+const NODE_WARM = ["#ff9a3c", "#ffc85e", "#ff7d2e"];
+
+/* ------------------------------------------------------- firing node field */
+function NeuralNodes({ geometry, radius, count = 240 }) {
+  const map = useGlowSprite();
+
+  const attrs = useMemo(() => {
+    const rand = mulberry32(0x5eed);
+    const pts = sampleSurface(geometry, count);
+    const position = new Float32Array(pts.length * 3);
+    const colour = new Float32Array(pts.length * 3);
+    const phase = new Float32Array(pts.length);
+    const scale = new Float32Array(pts.length);
+    const c = new THREE.Color();
+
+    pts.forEach(({ p, n }, i) => {
+      const lift = radius * 0.004 + rand() * radius * 0.012;
+      position[i * 3] = p.x + n.x * lift;
+      position[i * 3 + 1] = p.y + n.y * lift;
+      position[i * 3 + 2] = p.z + n.z * lift;
+
+      const warm = rand() < 0.26;
+      const pool = warm ? NODE_WARM : NODE_COOL;
+      c.set(pool[Math.floor(rand() * pool.length)]);
+      colour[i * 3] = c.r;
+      colour[i * 3 + 1] = c.g;
+      colour[i * 3 + 2] = c.b;
+
+      phase[i] = rand();
+      // A few oversized nodes carry the composition; the rest are filler.
+      scale[i] = warm ? 0.8 + rand() * 1.5 : 0.28 + rand() * 0.55;
+    });
+    return { position, colour, phase, scale, n: pts.length };
+  }, [geometry, radius, count]);
+
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uMap: { value: map },
+          uSize: { value: radius * 0.06 },
+        },
+        vertexShader: `
+          attribute float aPhase; attribute float aScale; attribute vec3 aColor;
+          uniform float uTime; uniform float uSize;
+          varying vec3 vColor; varying float vPulse;
+          void main() {
+            vColor = aColor;
+            float p = 0.35 + 0.65 * pow(
+              0.5 + 0.5 * sin(uTime * 1.7 + aPhase * 6.2831), 1.6
+            );
+            vPulse = p;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = uSize * aScale * (0.55 + 0.45 * p) * (260.0 / -mv.z);
+            gl_Position = projectionMatrix * mv;
+          }`,
+        fragmentShader: `
+          uniform sampler2D uMap;
+          varying vec3 vColor; varying float vPulse;
+          void main() {
+            float a = texture2D(uMap, gl_PointCoord).a;
+            gl_FragColor = vec4(vColor * (0.8 + 1.9 * vPulse), 1.0) * a;
+          }`,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    [map, radius]
+  );
+  useFrame(({ clock }) => {
+    material.uniforms.uTime.value = clock.elapsedTime;
+  });
+
+  return (
+    <points material={material} renderOrder={6}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          args={[attrs.position, 3]}
+        />
+        <bufferAttribute attach="attributes-aColor" args={[attrs.colour, 3]} />
+        <bufferAttribute attach="attributes-aPhase" args={[attrs.phase, 1]} />
+        <bufferAttribute attach="attributes-aScale" args={[attrs.scale, 1]} />
+      </bufferGeometry>
+    </points>
+  );
+}
+
+/* --------------------------------------------------------- radiating rays */
+function Synapses({ geometry, radius, count = 60 }) {
+  const attrs = useMemo(() => {
+    const rand = mulberry32(0xbeef);
+    const pts = sampleSurface(geometry, count * 3).filter(() => rand() < 0.34);
+    const position = new Float32Array(pts.length * 6);
+    const colour = new Float32Array(pts.length * 6);
+    const head = new THREE.Color("#bff4ff");
+    const dir = new THREE.Vector3();
+
+    pts.forEach(({ p, n }, i) => {
+      const len = radius * (0.03 + rand() * 0.085);
+      dir
+        .copy(n)
+        .add(
+          new THREE.Vector3(rand() - 0.5, rand() - 0.5, rand() - 0.5).multiplyScalar(0.35)
+        )
+        .normalize();
+
+      position[i * 6] = p.x;
+      position[i * 6 + 1] = p.y;
+      position[i * 6 + 2] = p.z;
+      position[i * 6 + 3] = p.x + dir.x * len;
+      position[i * 6 + 4] = p.y + dir.y * len;
+      position[i * 6 + 5] = p.z + dir.z * len;
+
+      // Bright at the cortex, fading to nothing at the tip.
+      colour[i * 6] = head.r;
+      colour[i * 6 + 1] = head.g;
+      colour[i * 6 + 2] = head.b;
+      colour[i * 6 + 3] = 0;
+      colour[i * 6 + 4] = 0;
+      colour[i * 6 + 5] = 0;
+    });
+    return { position, colour };
+  }, [geometry, radius, count]);
+
+  return (
+    <lineSegments renderOrder={5}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[attrs.position, 3]} />
+        <bufferAttribute attach="attributes-color" args={[attrs.colour, 3]} />
+      </bufferGeometry>
+      <lineBasicMaterial
+        vertexColors
+        transparent
+        opacity={0.16}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </lineSegments>
+  );
+}
+
+/* ------------------------------------------------------- background bokeh */
+function Dust({ radius, count = 260 }) {
+  const map = useGlowSprite();
+  const ref = useRef();
+
+  const attrs = useMemo(() => {
+    const rand = mulberry32(0xd057);
+    const position = new Float32Array(count * 3);
+    const scale = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const r = radius * (1.5 + rand() * 2.1);
+      const theta = rand() * Math.PI * 2;
+      const phi = Math.acos(2 * rand() - 1);
+      position[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      position[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      position[i * 3 + 2] = r * Math.cos(phi);
+      scale[i] = 0.3 + rand() * 1.1;
+    }
+    return { position, scale };
+  }, [radius, count]);
+
+  useFrame((_, dt) => {
+    if (ref.current) ref.current.rotation.y += dt * 0.012;
+  });
+
+  return (
+    <points ref={ref} renderOrder={0}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[attrs.position, 3]} />
+      </bufferGeometry>
+      <pointsMaterial
+        map={map}
+        color={INK.brain}
+        size={radius * 0.05}
+        sizeAttenuation
+        transparent
+        opacity={0.28}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </points>
+  );
+}
+
+function Brain({ url, visible, wire, glow }) {
   const { scene } = useGLTF(url);
-  const shell = useFresnel(INK.brain, { power: 2.2, strength: 1.15 });
+  const shell = useFresnel(INK.brain, { power: 2.1, strength: 1.25 });
   const geometry = useMemo(() => {
     let g = null;
     scene.traverse((o) => {
       if (o.isMesh && !g) g = o.geometry;
     });
-    return g;
+    return ensureNormals(g);
   }, [scene]);
+
+  const radius = useMemo(() => {
+    if (!geometry) return 90;
+    if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+    return geometry.boundingSphere.radius;
+  }, [geometry]);
+
+  // A full wireframe of ~56k faces is a solid haze at screen size. Creased
+  // edges only trace the sulcal ridges, which is what reads as a network.
+  const edges = useMemo(
+    () => (geometry ? new THREE.EdgesGeometry(geometry, 9) : null),
+    [geometry]
+  );
 
   if (!geometry) return null;
   return (
     <group visible={visible}>
-      <mesh geometry={geometry} material={shell} renderOrder={2} />
+      {/* Depth-only prepass. Without it the additive layers of a folded cortex
+          stack ~15 deep along every ray and saturate the silhouette to white. */}
+      <mesh geometry={geometry} renderOrder={1}>
+        {/* Offset back a hair so the shell below passes the depth test cleanly
+            inside narrow sulci, where equal-depth fragments speckle. */}
+        <meshBasicMaterial
+          colorWrite={false}
+          polygonOffset
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
+        />
+      </mesh>
+
+      {/* Faint body fill so the cortex reads as volume rather than outline. */}
+      <mesh geometry={geometry} renderOrder={2}>
+        <meshBasicMaterial
+          color={INK.core}
+          transparent
+          opacity={0.18}
+          depthWrite={false}
+        />
+      </mesh>
+
+      <mesh geometry={geometry} material={shell} renderOrder={3} />
+
       {wire && (
-        <mesh geometry={geometry} renderOrder={1}>
-          <meshBasicMaterial
+        <lineSegments geometry={edges} renderOrder={4}>
+          <lineBasicMaterial
             color={INK.rim}
-            wireframe
             transparent
-            opacity={0.045}
+            opacity={0.2}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
           />
-        </mesh>
+        </lineSegments>
+      )}
+
+      {glow && (
+        <>
+          <Synapses geometry={geometry} radius={radius} />
+          <NeuralNodes geometry={geometry} radius={radius} />
+        </>
       )}
     </group>
   );
 }
 
 function Region({ geometry, color, visible }) {
-  // Solid core plus an additive fresnel halo: a glow without a
-  // postprocessing pass, which also keeps the panel text crisp.
-  const halo = useFresnel(color, { power: 1.7, strength: 1.5 });
+  // depthTest off so the halo survives the brain's depth prepass: the tumour
+  // sits inside the shell and would otherwise be culled by it.
+  const halo = useFresnel(color, { power: 1.7, strength: 1.4, depthTest: false });
   return (
     <group visible={visible}>
-      <mesh geometry={geometry} renderOrder={3}>
+      {/* Opaque, and ordered ahead of the brain prepass, so the core lands in
+          the colour buffer before the shell glows over it. */}
+      <mesh geometry={geometry} renderOrder={0}>
         <meshStandardMaterial
           color={color}
           emissive={color}
-          emissiveIntensity={0.7}
+          emissiveIntensity={0.9}
           roughness={0.35}
           metalness={0.05}
-          transparent
-          opacity={0.92}
         />
       </mesh>
-      <mesh geometry={geometry} material={halo} scale={1.045} renderOrder={4} />
+      <mesh geometry={geometry} material={halo} scale={1.045} renderOrder={20} />
     </group>
   );
 }
@@ -102,7 +442,7 @@ function Tumours({ url, shown }) {
       const key = Object.keys(REGION).find(
         (k) => o.name === k || o.name.startsWith(k) || o.parent?.name === k
       );
-      if (key) found.push({ key, geometry: o.geometry });
+      if (key) found.push({ key, geometry: ensureNormals(o.geometry) });
     });
     return found;
   }, [scene]);
@@ -140,9 +480,8 @@ class AssetBoundary extends React.Component {
   }
 }
 
-function Rig({ radius, spin }) {
+function Rig({ radius }) {
   const { camera } = useThree();
-  const group = useRef();
 
   useEffect(() => {
     const d = radius * 3.1;
@@ -152,17 +491,14 @@ function Rig({ radius, spin }) {
     camera.updateProjectionMatrix();
   }, [camera, radius]);
 
-  useFrame((_, dt) => {
-    if (spin && group.current) group.current.rotation.y += dt * 0.18;
-  });
-
-  return <group ref={group} />;
+  return null;
 }
 
 /* ------------------------------------------------------------------ view */
 export default function BrainViewer({ meta, brainUrl, tumorUrl, onNewCase }) {
   const [brainOn, setBrainOn] = useState(true);
   const [wire, setWire] = useState(true);
+  const [glow, setGlow] = useState(true);
   const [spin, setSpin] = useState(false);
   const [shown, setShown] = useState({});
   const [error, setError] = useState(null);
@@ -201,20 +537,21 @@ export default function BrainViewer({ meta, brainUrl, tumorUrl, onNewCase }) {
         camera={{ fov: 38 }}
         onCreated={({ gl }) => gl.setClearColor(INK.void)}
       >
-        <fog attach="fog" args={[INK.void, radius * 2.2, radius * 6.5]} />
-        <ambientLight intensity={0.35} />
+        <ambientLight intensity={0.4} />
         <directionalLight position={[1, 2, 3]} intensity={1.1} />
         <directionalLight
           position={[-2, -1, -2]}
-          intensity={0.4}
+          intensity={0.45}
           color={INK.brain}
         />
 
-        <Rig radius={radius} spin={spin} />
+        <Backdrop />
+        <Rig radius={radius} />
+        <Dust radius={radius} />
 
         <AssetBoundary onError={setError}>
           <Suspense fallback={null}>
-            <Brain url={brainUrl} visible={brainOn} wire={wire} />
+            <Brain url={brainUrl} visible={brainOn} wire={wire} glow={glow} />
             <Tumours url={tumorUrl} shown={shown} />
           </Suspense>
         </AssetBoundary>
@@ -224,9 +561,21 @@ export default function BrainViewer({ meta, brainUrl, tumorUrl, onNewCase }) {
           enablePan
           enableDamping
           dampingFactor={0.08}
+          autoRotate={spin}
+          autoRotateSpeed={0.55}
           minDistance={radius * 1.15}
           maxDistance={radius * 7}
         />
+
+        <EffectComposer disableNormalPass frameBufferType={THREE.UnsignedByteType}>
+          <Bloom
+            intensity={0.9}
+            luminanceThreshold={0.3}
+            luminanceSmoothing={0.5}
+            mipmapBlur
+            radius={0.7}
+          />
+        </EffectComposer>
       </Canvas>
 
       <aside style={S.panel}>
@@ -296,6 +645,9 @@ export default function BrainViewer({ meta, brainUrl, tumorUrl, onNewCase }) {
         <Btn on={wire} onClick={() => setWire((v) => !v)}>
           Mesh lines
         </Btn>
+        <Btn on={glow} onClick={() => setGlow((v) => !v)}>
+          Neural glow
+        </Btn>
         <Btn on={spin} onClick={() => setSpin((v) => !v)}>
           Auto-rotate
         </Btn>
@@ -333,7 +685,7 @@ const S = {
     position: "relative",
     width: "100%",
     height: "100dvh",
-    background: `radial-gradient(120% 90% at 62% 42%, ${INK.deep} 0%, ${INK.void} 68%)`,
+    background: `radial-gradient(115% 85% at 58% 45%, ${INK.halo} 0%, ${INK.deep} 38%, ${INK.void} 78%)`,
     fontFamily: FONT,
     color: INK.text,
     overflow: "hidden",

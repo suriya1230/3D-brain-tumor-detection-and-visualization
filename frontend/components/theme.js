@@ -1,6 +1,8 @@
 export const INK = {
-  void: "#04080f",
-  deep: "#071420",
+  void: "#02060e",
+  deep: "#061a2e",
+  halo: "#0e3a5c",
+  core: "#1c6ea8",
   brain: "#4fd8ff",
   rim: "#9beeff",
   text: "#c8e4f0",
