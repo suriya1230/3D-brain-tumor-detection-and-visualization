@@ -32,6 +32,12 @@ REGIONS: dict[int, tuple[str, bool]] = {
 
 PROB_CHANNEL = {"TC": 0, "WT": 1, "ET": 2, "RC": 3}
 
+# Mean holdout Dice per region (backend/models/test_metrics.csv), for
+# context alongside this case's own TTA disagreement score below - not
+# combined into a single number, since one is a property of the model and
+# the other is a property of this specific scan.
+REGION_HOLDOUT_DICE = {"TC": 0.7913, "WT": 0.8519, "ET": 0.7816, "RC": 0.6237}
+
 BRAIN_STEP = 2      # marching-cubes stride for the brain (2 keeps it light)
 TUMOUR_STEP = 1     # full resolution for tumour regions
 SMOOTH_SIGMA = 1.0
@@ -148,6 +154,9 @@ def build_assets(pred, case_id: str) -> tuple[bytes, bytes, dict]:
         ch = PROB_CHANNEL.get(name)
         if ch is not None:
             entry["mean_probability"] = round(float(pred.prob[ch][mask].mean()), 4)
+            unc = (pred.region_uncertainty or {}).get(name)
+            if unc is not None:
+                entry["tta_uncertainty"] = round(unc, 4)
 
         tumour_scene.add_geometry(to_scene_frame(mesh), geom_name=name,
                                   node_name=name)
@@ -173,6 +182,10 @@ def build_assets(pred, case_id: str) -> tuple[bytes, bytes, dict]:
             regions["ET"]["volume_cc"] / derived["WT_cc"], 3
         )
 
+    region_uncertainty = {
+        k: round(v, 4) for k, v in (pred.region_uncertainty or {}).items() if v is not None
+    }
+
     meta = {
         "case_id": case_id,
         "model": "SegResNet (MONAI), BraTS 2024 post-treatment glioma",
@@ -185,6 +198,24 @@ def build_assets(pred, case_id: str) -> tuple[bytes, bytes, dict]:
         "brain_faces": int(len(brain_mesh.faces)),
         "regions": regions,
         "derived": derived,
+        "confidence": {
+            "method": (
+                "Test-time augmentation: 4 passes (identity + one flip per "
+                "spatial axis). tta_uncertainty is the mean per-voxel "
+                "disagreement (probability std across passes) inside each "
+                "predicted region for THIS scan."
+            ),
+            "region_uncertainty": region_uncertainty,
+            "region_holdout_dice": REGION_HOLDOUT_DICE,
+            "note": (
+                "tta_uncertainty is a raw disagreement score, not a "
+                "calibrated error probability - no per-case holdout data "
+                "exists yet to calibrate it against ground truth. Higher "
+                "means the model disagrees with itself more under a "
+                "symmetry it should be invariant to; treat it as a relative "
+                "signal within this case, not an absolute accuracy figure."
+            ),
+        },
         "notes": (
             "Locations are coarse MNI-coordinate heuristics, not atlas "
             "segmentations. mean_probability is the average sigmoid output "

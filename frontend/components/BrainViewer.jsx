@@ -1,46 +1,13 @@
 "use client";
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
+import { Dust, NeuralNodes, Synapses, ensureNormals, useFresnel } from "./brainVisuals";
+import EvidencePanel from "./EvidencePanel";
 import { INK, REGION } from "./theme";
-
-/* ------------------------------------------------- x-ray fresnel material */
-function useFresnel(color, { power = 2.4, strength = 1.0, depthTest = true } = {}) {
-  return useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        depthTest,
-        uniforms: {
-          uColor: { value: new THREE.Color(color) },
-          uPower: { value: power },
-          uStrength: { value: strength },
-        },
-        vertexShader: `
-          varying vec3 vN; varying vec3 vV;
-          void main() {
-            vec4 wp = modelMatrix * vec4(position, 1.0);
-            vN = normalize(mat3(modelMatrix) * normal);
-            vV = normalize(cameraPosition - wp.xyz);
-            gl_Position = projectionMatrix * viewMatrix * wp;
-          }`,
-        fragmentShader: `
-          uniform vec3 uColor; uniform float uPower; uniform float uStrength;
-          varying vec3 vN; varying vec3 vV;
-          void main() {
-            float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), uPower);
-            gl_FragColor = vec4(uColor * f * uStrength, f);
-          }`,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.FrontSide,
-      }),
-    [color, power, strength, depthTest]
-  );
-}
 
 /* --------------------------------------------------- screen-space backdrop */
 // Drawn in-scene rather than as CSS behind a transparent canvas: the bloom
@@ -80,260 +47,6 @@ function Backdrop() {
     <mesh material={material} frustumCulled={false} renderOrder={-1000}>
       <planeGeometry args={[2, 2]} />
     </mesh>
-  );
-}
-
-/* --------------------------------------------------- deterministic random */
-// Seeded so node placement and pulse phases stay identical across re-renders;
-// a fresh Math.random() set on every render makes the glow visibly jump.
-function mulberry32(seed) {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// The backend exports POSITION and indices only, so anything that shades by
-// normal (the fresnel shell, the tumour's standard material) gets a zero
-// vector and renders as a flat blown-out silhouette until these exist.
-function ensureNormals(geometry) {
-  if (geometry && !geometry.attributes.normal) geometry.computeVertexNormals();
-  return geometry;
-}
-
-function sampleSurface(geometry, count) {
-  const pos = geometry.attributes.position;
-  const nor = geometry.attributes.normal;
-  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-  const centre = geometry.boundingSphere.center;
-  const total = pos.count;
-  const stride = Math.max(1, Math.floor(total / count));
-  const v = new THREE.Vector3();
-  const n = new THREE.Vector3();
-  const out = [];
-  for (let i = 0; i < total && out.length < count; i += stride) {
-    v.fromBufferAttribute(pos, i);
-    if (nor) n.fromBufferAttribute(nor, i).normalize();
-    else n.copy(v).sub(centre).normalize();
-    out.push({ p: v.clone(), n: n.clone() });
-  }
-  return out;
-}
-
-/* --------------------------------------------------------- glow sprite map */
-function useGlowSprite() {
-  return useMemo(() => {
-    const size = 128;
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    const g = ctx.createRadialGradient(
-      size / 2, size / 2, 0,
-      size / 2, size / 2, size / 2
-    );
-    g.addColorStop(0.0, "rgba(255,255,255,1)");
-    g.addColorStop(0.18, "rgba(255,255,255,0.85)");
-    g.addColorStop(0.42, "rgba(255,255,255,0.28)");
-    g.addColorStop(1.0, "rgba(255,255,255,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, size);
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  }, []);
-}
-
-const NODE_COOL = ["#a8f4ff", "#ffffff", "#6fe0ff", "#d6faff"];
-// Warm accents read as "firing" without borrowing the crimson the ET overlay
-// uses, so a hotspot can never be mistaken for enhancing tumour.
-const NODE_WARM = ["#ff9a3c", "#ffc85e", "#ff7d2e"];
-
-/* ------------------------------------------------------- firing node field */
-function NeuralNodes({ geometry, radius, count = 240 }) {
-  const map = useGlowSprite();
-
-  const attrs = useMemo(() => {
-    const rand = mulberry32(0x5eed);
-    const pts = sampleSurface(geometry, count);
-    const position = new Float32Array(pts.length * 3);
-    const colour = new Float32Array(pts.length * 3);
-    const phase = new Float32Array(pts.length);
-    const scale = new Float32Array(pts.length);
-    const c = new THREE.Color();
-
-    pts.forEach(({ p, n }, i) => {
-      const lift = radius * 0.004 + rand() * radius * 0.012;
-      position[i * 3] = p.x + n.x * lift;
-      position[i * 3 + 1] = p.y + n.y * lift;
-      position[i * 3 + 2] = p.z + n.z * lift;
-
-      const warm = rand() < 0.26;
-      const pool = warm ? NODE_WARM : NODE_COOL;
-      c.set(pool[Math.floor(rand() * pool.length)]);
-      colour[i * 3] = c.r;
-      colour[i * 3 + 1] = c.g;
-      colour[i * 3 + 2] = c.b;
-
-      phase[i] = rand();
-      // A few oversized nodes carry the composition; the rest are filler.
-      scale[i] = warm ? 0.8 + rand() * 1.5 : 0.28 + rand() * 0.55;
-    });
-    return { position, colour, phase, scale, n: pts.length };
-  }, [geometry, radius, count]);
-
-  const material = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        uniforms: {
-          uTime: { value: 0 },
-          uMap: { value: map },
-          uSize: { value: radius * 0.06 },
-        },
-        vertexShader: `
-          attribute float aPhase; attribute float aScale; attribute vec3 aColor;
-          uniform float uTime; uniform float uSize;
-          varying vec3 vColor; varying float vPulse;
-          void main() {
-            vColor = aColor;
-            float p = 0.35 + 0.65 * pow(
-              0.5 + 0.5 * sin(uTime * 1.7 + aPhase * 6.2831), 1.6
-            );
-            vPulse = p;
-            vec4 mv = modelViewMatrix * vec4(position, 1.0);
-            gl_PointSize = uSize * aScale * (0.55 + 0.45 * p) * (260.0 / -mv.z);
-            gl_Position = projectionMatrix * mv;
-          }`,
-        fragmentShader: `
-          uniform sampler2D uMap;
-          varying vec3 vColor; varying float vPulse;
-          void main() {
-            float a = texture2D(uMap, gl_PointCoord).a;
-            gl_FragColor = vec4(vColor * (0.8 + 1.9 * vPulse), 1.0) * a;
-          }`,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    [map, radius]
-  );
-  useFrame(({ clock }) => {
-    material.uniforms.uTime.value = clock.elapsedTime;
-  });
-
-  return (
-    <points material={material} renderOrder={6}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          args={[attrs.position, 3]}
-        />
-        <bufferAttribute attach="attributes-aColor" args={[attrs.colour, 3]} />
-        <bufferAttribute attach="attributes-aPhase" args={[attrs.phase, 1]} />
-        <bufferAttribute attach="attributes-aScale" args={[attrs.scale, 1]} />
-      </bufferGeometry>
-    </points>
-  );
-}
-
-/* --------------------------------------------------------- radiating rays */
-function Synapses({ geometry, radius, count = 60 }) {
-  const attrs = useMemo(() => {
-    const rand = mulberry32(0xbeef);
-    const pts = sampleSurface(geometry, count * 3).filter(() => rand() < 0.34);
-    const position = new Float32Array(pts.length * 6);
-    const colour = new Float32Array(pts.length * 6);
-    const head = new THREE.Color("#bff4ff");
-    const dir = new THREE.Vector3();
-
-    pts.forEach(({ p, n }, i) => {
-      const len = radius * (0.03 + rand() * 0.085);
-      dir
-        .copy(n)
-        .add(
-          new THREE.Vector3(rand() - 0.5, rand() - 0.5, rand() - 0.5).multiplyScalar(0.35)
-        )
-        .normalize();
-
-      position[i * 6] = p.x;
-      position[i * 6 + 1] = p.y;
-      position[i * 6 + 2] = p.z;
-      position[i * 6 + 3] = p.x + dir.x * len;
-      position[i * 6 + 4] = p.y + dir.y * len;
-      position[i * 6 + 5] = p.z + dir.z * len;
-
-      // Bright at the cortex, fading to nothing at the tip.
-      colour[i * 6] = head.r;
-      colour[i * 6 + 1] = head.g;
-      colour[i * 6 + 2] = head.b;
-      colour[i * 6 + 3] = 0;
-      colour[i * 6 + 4] = 0;
-      colour[i * 6 + 5] = 0;
-    });
-    return { position, colour };
-  }, [geometry, radius, count]);
-
-  return (
-    <lineSegments renderOrder={5}>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[attrs.position, 3]} />
-        <bufferAttribute attach="attributes-color" args={[attrs.colour, 3]} />
-      </bufferGeometry>
-      <lineBasicMaterial
-        vertexColors
-        transparent
-        opacity={0.16}
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </lineSegments>
-  );
-}
-
-/* ------------------------------------------------------- background bokeh */
-function Dust({ radius, count = 260 }) {
-  const map = useGlowSprite();
-  const ref = useRef();
-
-  const attrs = useMemo(() => {
-    const rand = mulberry32(0xd057);
-    const position = new Float32Array(count * 3);
-    const scale = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      const r = radius * (1.5 + rand() * 2.1);
-      const theta = rand() * Math.PI * 2;
-      const phi = Math.acos(2 * rand() - 1);
-      position[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      position[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      position[i * 3 + 2] = r * Math.cos(phi);
-      scale[i] = 0.3 + rand() * 1.1;
-    }
-    return { position, scale };
-  }, [radius, count]);
-
-  useFrame((_, dt) => {
-    if (ref.current) ref.current.rotation.y += dt * 0.012;
-  });
-
-  return (
-    <points ref={ref} renderOrder={0}>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[attrs.position, 3]} />
-      </bufferGeometry>
-      <pointsMaterial
-        map={map}
-        color={INK.brain}
-        size={radius * 0.05}
-        sizeAttenuation
-        transparent
-        opacity={0.28}
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </points>
   );
 }
 
@@ -656,7 +369,12 @@ export default function BrainViewer({ meta, brainUrl, tumorUrl, onNewCase }) {
         <Btn onClick={onNewCase}>New scan</Btn>
       </div>
 
+      <button onClick={onNewCase} style={S.backBtn}>
+        ← Home
+      </button>
       <p style={S.hint}>Drag to rotate · scroll to zoom · right-drag to pan</p>
+
+      <EvidencePanel jobId={meta.job_id} open />
     </div>
   );
 }
@@ -754,13 +472,18 @@ const S = {
     color: "#ff8a9c",
   },
   controls: {
+    // Top-center, not bottom-left — the Evidence panel is permanently open
+    // now (no toggle button anymore) and occupies the whole left column
+    // top-to-bottom, so bottom-left is hidden underneath it.
     position: "absolute",
-    left: 24,
-    bottom: 24,
+    top: 24,
+    left: "50%",
+    transform: "translateX(-50%)",
     display: "flex",
     flexWrap: "wrap",
+    justifyContent: "center",
     gap: 8,
-    maxWidth: "min(460px, calc(100vw - 48px))",
+    maxWidth: "min(560px, calc(100vw - 48px))",
   },
   btn: {
     padding: "7px 13px",
@@ -775,9 +498,23 @@ const S = {
   hint: {
     position: "absolute",
     left: 26,
-    top: 24,
+    top: 56,
     margin: 0,
     fontSize: 11,
     color: INK.dim,
+  },
+  backBtn: {
+    position: "absolute",
+    left: 24,
+    top: 22,
+    padding: "7px 13px",
+    fontFamily: FONT,
+    fontSize: 12,
+    fontWeight: 500,
+    borderRadius: 3,
+    border: "1px solid rgba(79,216,255,0.28)",
+    background: "rgba(79,216,255,0.06)",
+    color: INK.text,
+    cursor: "pointer",
   },
 };

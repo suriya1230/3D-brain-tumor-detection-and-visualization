@@ -44,6 +44,8 @@ class Prediction:
     t1n: np.ndarray          # resampled T1, same grid as seg (for the brain mesh)
     epoch: int
     val_dice: float
+    region_uncertainty: dict[str, float | None]  # REGION_NAMES -> TTA disagreement, or
+                                                   # None if the region predicted no voxels
 
 
 # ---------------------------------------------------------------- model ----
@@ -150,16 +152,39 @@ class Segmenter:
 
         x = crop.unsqueeze(0).to(self.device)
         use_amp = self.device.type == "cuda"
-        with torch.autocast(self.device.type, enabled=use_amp):
-            logits = sliding_window_inference(
-                x, ROI, sw_batch_size=1, predictor=self.model,
-                overlap=sw_overlap, mode="gaussian", progress=False,
-            )
-        p = torch.sigmoid(logits.float())[0].cpu().numpy()
+
+        # --- test-time augmentation: identity + one flip per spatial axis --
+        # 4 passes, not the full 8-way combination, so this stays tractable
+        # on CPU inference. Flip is applied to the already-padded tensor and
+        # undone on the logits before anything else touches them, so the pad
+        # region still lands in the same place for every pass. Comparing the
+        # 4 outputs measures how much the model disagrees with itself under
+        # a symmetry it should in principle be invariant to - that
+        # disagreement is a per-region uncertainty *signal*, not a
+        # calibrated error probability (see meshing.py's meta["confidence"]
+        # for the honesty caveat, matching how this project already treats
+        # mean_probability).
+        tta_dims = [None, [2], [3], [4]]
+        passes = []
+        for dims in tta_dims:
+            xin = torch.flip(x, dims=dims) if dims else x
+            with torch.autocast(self.device.type, enabled=use_amp):
+                logits = sliding_window_inference(
+                    xin, ROI, sw_batch_size=1, predictor=self.model,
+                    overlap=sw_overlap, mode="gaussian", progress=False,
+                )
+            if dims:
+                logits = torch.flip(logits, dims=dims)
+            passes.append(torch.sigmoid(logits.float())[0].cpu().numpy())
+
+        stack = np.stack(passes, axis=0)   # (4, 4, x, y, z): passes, regions, ...
+        p = stack.mean(axis=0)
+        p_std = stack.std(axis=0)
 
         # --- undo pad, then paste back into the full grid -------------------
         cs = [hi[d] - lo[d] for d in range(3)]
         p = p[:, : cs[0], : cs[1], : cs[2]]
+        p_std = p_std[:, : cs[0], : cs[1], : cs[2]]
 
         prob = np.zeros((4, *shape), dtype=np.float32)
         prob[:, lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]] = p
@@ -167,9 +192,17 @@ class Segmenter:
         seg = regions_to_labelmap(prob > 0.5)
         t1n = np.asarray(full[0].numpy(), dtype=np.float32)
 
+        region_uncertainty: dict[str, float | None] = {}
+        for i, name in enumerate(REGION_NAMES):
+            region_mask = p[i] > 0.5
+            region_uncertainty[name] = (
+                float(p_std[i][region_mask].mean()) if region_mask.any() else None
+            )
+
         return Prediction(
             seg=seg, prob=prob, affine=affine, t1n=t1n,
             epoch=self.epoch, val_dice=self.val_dice,
+            region_uncertainty=region_uncertainty,
         )
 
 

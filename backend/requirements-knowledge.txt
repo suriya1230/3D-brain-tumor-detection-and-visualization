@@ -1,0 +1,28 @@
+# Phase 3 knowledge/retrieval subsystem. Installed into the same venv as
+# requirements.txt (Phase 1's imaging pipeline) — pinned here to versions
+# known compatible with the torch==2.4.1 CPU wheel already pinned there.
+#
+# transformers>=5.0 drops support for torch<2.5 and disables PyTorch model
+# loading entirely (AutoModel becomes unusable) — do not let pip float this
+# past 4.x without also revisiting requirements.txt's torch pin.
+# sentence-transformers>=4.0 in turn requires transformers>=5.0, so it's
+# pinned below 4.0 to match.
+beautifulsoup4==4.15.0
+lxml==6.1.3
+PyYAML==6.0.3
+requests==2.34.2
+tiktoken==0.14.0
+chromadb==1.5.9
+transformers==4.49.0
+sentence-transformers==3.4.1
+
+# Answer-generation LLM clients (app/knowledge/answering.py). Only one is
+# required at runtime depending on which client you use — anthropic for
+# AnthropicClient, openai for GroqClient (Groq's endpoint is
+# OpenAI-compatible; there's no separate groq SDK dependency here).
+anthropic
+openai
+
+# Loads backend/.env (see .env.example) so API keys don't need manual
+# shell exports.
+python-dotenv

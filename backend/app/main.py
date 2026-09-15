@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from .inference import MODALITIES, Segmenter
+from .knowledge_routes import router as knowledge_router
 from .meshing import build_assets, save_mask_nifti
 
 logging.basicConfig(
@@ -57,6 +58,7 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+app.include_router(knowledge_router)
 
 _segmenter: Segmenter | None = None
 

@@ -1,0 +1,471 @@
+# Controlled vocabulary for CNS tumour types, seeded from the WHO
+# Classification of Tumours of the Central Nervous System, 5th edition (2021)
+# ("WHO CNS5"). Canonical names and category groupings are WHO's; that
+# structure is a fact, not copyrightable prose (spec §3).
+#
+# Every leaf tumour type in WHO CNS5 has a stub entry here so the vocabulary
+# is structurally complete. `synonyms` is the hand-curated part and is NOT
+# complete — it covers the entities that actually appear in the NCI PDQ CNS
+# treatment summaries used as ingest fixtures, plus their common older-WHO
+# and colloquial names. Extending synonym coverage for the long tail of rare
+# entities is future work; this file is meant to be read and extended by a
+# person, not regenerated.
+#
+# `id` is the stable key stored in Chunk.tumour_types. Never rename an `id`
+# once chunks reference it — add a synonym instead, or migrate + reindex.
+
+categories:
+  - adult_type_diffuse_glioma
+  - pediatric_type_diffuse_low_grade_glioma
+  - pediatric_type_diffuse_high_grade_glioma
+  - circumscribed_astrocytic_glioma
+  - glioneuronal_and_neuronal_tumor
+  - ependymal_tumor
+  - choroid_plexus_tumor
+  - embryonal_tumor
+  - pineal_tumor
+  - cranial_and_paraspinal_nerve_tumor
+  - meningioma
+  - mesenchymal_non_meningothelial_tumor
+  - melanocytic_tumor
+  - hematolymphoid_tumor
+  - germ_cell_tumor
+  - sellar_region_tumor
+  - cns_metastasis
+
+entities:
+  # ---- Adult-type diffuse gliomas -----------------------------------------
+  - id: astrocytoma_idh_mutant
+    who_name: "Astrocytoma, IDH-mutant"
+    category: adult_type_diffuse_glioma
+    synonyms:
+      - astrocytoma idh-mutant
+      - idh-mutant astrocytoma
+      - low-grade astrocytoma idh-mutant
+      - anaplastic astrocytoma idh-mutant   # 2016-era grade 3 name, folded into this type in CNS5
+      - diffuse astrocytoma idh-mutant
+
+  - id: oligodendroglioma_idh_mutant_1p19q
+    who_name: "Oligodendroglioma, IDH-mutant, and 1p/19q-codeleted"
+    category: adult_type_diffuse_glioma
+    synonyms:
+      - oligodendroglioma
+      - anaplastic oligodendroglioma
+      - 1p/19q codeleted oligodendroglioma
+      - oligodendroglial tumor
+
+  - id: glioblastoma_idh_wildtype
+    who_name: "Glioblastoma, IDH-wildtype"
+    category: adult_type_diffuse_glioma
+    synonyms:
+      - glioblastoma
+      - glioblastoma multiforme
+      - gbm
+      - grade 4 astrocytoma idh-wildtype
+      - idh-wildtype glioblastoma
+
+  # ---- Pediatric-type diffuse low-grade gliomas ---------------------------
+  - id: diffuse_astrocytoma_myb_mybl1
+    who_name: "Diffuse astrocytoma, MYB- or MYBL1-altered"
+    category: pediatric_type_diffuse_low_grade_glioma
+    synonyms: []
+
+  - id: angiocentric_glioma
+    who_name: "Angiocentric glioma"
+    category: pediatric_type_diffuse_low_grade_glioma
+    synonyms: []
+
+  - id: polymorphous_low_grade_neuroepithelial_tumor_young
+    who_name: "Polymorphous low-grade neuroepithelial tumor of the young"
+    category: pediatric_type_diffuse_low_grade_glioma
+    synonyms:
+      - plnty
+
+  - id: diffuse_low_grade_glioma_mapk_altered
+    who_name: "Diffuse low-grade glioma, MAPK pathway-altered"
+    category: pediatric_type_diffuse_low_grade_glioma
+    synonyms: []
+
+  # ---- Pediatric-type diffuse high-grade gliomas --------------------------
+  - id: diffuse_midline_glioma_h3k27_altered
+    who_name: "Diffuse midline glioma, H3 K27-altered"
+    category: pediatric_type_diffuse_high_grade_glioma
+    synonyms:
+      - dipg
+      - diffuse intrinsic pontine glioma
+      - h3 k27m mutant glioma
+
+  - id: diffuse_hemispheric_glioma_h3g34_mutant
+    who_name: "Diffuse hemispheric glioma, H3 G34-mutant"
+    category: pediatric_type_diffuse_high_grade_glioma
+    synonyms: []
+
+  - id: diffuse_pediatric_high_grade_glioma_h3_idh_wildtype
+    who_name: "Diffuse pediatric-type high-grade glioma, H3-wildtype and IDH-wildtype"
+    category: pediatric_type_diffuse_high_grade_glioma
+    synonyms: []
+
+  - id: infant_type_hemispheric_glioma
+    who_name: "Infant-type hemispheric glioma"
+    category: pediatric_type_diffuse_high_grade_glioma
+    synonyms: []
+
+  # ---- Circumscribed astrocytic gliomas -----------------------------------
+  - id: pilocytic_astrocytoma
+    who_name: "Pilocytic astrocytoma"
+    category: circumscribed_astrocytic_glioma
+    synonyms:
+      - juvenile pilocytic astrocytoma
+
+  - id: high_grade_astrocytoma_piloid_features
+    who_name: "High-grade astrocytoma with piloid features"
+    category: circumscribed_astrocytic_glioma
+    synonyms: []
+
+  - id: pleomorphic_xanthoastrocytoma
+    who_name: "Pleomorphic xanthoastrocytoma"
+    category: circumscribed_astrocytic_glioma
+    synonyms:
+      - pxa
+
+  - id: subependymal_giant_cell_astrocytoma
+    who_name: "Subependymal giant cell astrocytoma"
+    category: circumscribed_astrocytic_glioma
+    synonyms:
+      - sega
+      - subependymal giant cell tumor
+
+  - id: chordoid_glioma
+    who_name: "Chordoid glioma"
+    category: circumscribed_astrocytic_glioma
+    synonyms: []
+
+  - id: astroblastoma_mn1_altered
+    who_name: "Astroblastoma, MN1-altered"
+    category: circumscribed_astrocytic_glioma
+    synonyms:
+      - astroblastoma
+
+  # ---- Glioneuronal and neuronal tumors ------------------------------------
+  - id: ganglioglioma
+    who_name: "Ganglioglioma"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms:
+      - anaplastic ganglioglioma
+
+  - id: desmoplastic_infantile_ganglioglioma_astrocytoma
+    who_name: "Desmoplastic infantile ganglioglioma/desmoplastic infantile astrocytoma"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms:
+      - dig
+      - dia
+
+  - id: dysembryoplastic_neuroepithelial_tumor
+    who_name: "Dysembryoplastic neuroepithelial tumor"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms:
+      - dnt
+      - dysembryoplastic neuroepithelial tumour
+
+  - id: diffuse_glioneuronal_tumor_oligo_like_nuclear_clusters
+    who_name: "Diffuse glioneuronal tumor with oligodendroglioma-like features and nuclear clusters"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms: []
+
+  - id: papillary_glioneuronal_tumor
+    who_name: "Papillary glioneuronal tumor"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms: []
+
+  - id: rosette_forming_glioneuronal_tumor
+    who_name: "Rosette-forming glioneuronal tumor"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms:
+      - rgnt
+
+  - id: myxoid_glioneuronal_tumor
+    who_name: "Myxoid glioneuronal tumor"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms: []
+
+  - id: diffuse_leptomeningeal_glioneuronal_tumor
+    who_name: "Diffuse leptomeningeal glioneuronal tumor"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms:
+      - dlgnt
+
+  - id: gangliocytoma
+    who_name: "Gangliocytoma"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms: []
+
+  - id: multinodular_vacuolating_neuronal_tumor
+    who_name: "Multinodular and vacuolating neuronal tumor"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms:
+      - mvnt
+
+  - id: dysplastic_cerebellar_gangliocytoma
+    who_name: "Dysplastic cerebellar gangliocytoma (Lhermitte-Duclos disease)"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms:
+      - lhermitte-duclos disease
+
+  - id: central_neurocytoma
+    who_name: "Central neurocytoma"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms: []
+
+  - id: extraventricular_neurocytoma
+    who_name: "Extraventricular neurocytoma"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms: []
+
+  - id: cerebellar_liponeurocytoma
+    who_name: "Cerebellar liponeurocytoma"
+    category: glioneuronal_and_neuronal_tumor
+    synonyms: []
+
+  # ---- Ependymal tumors -----------------------------------------------------
+  - id: supratentorial_ependymoma
+    who_name: "Supratentorial ependymoma"
+    category: ependymal_tumor
+    synonyms:
+      - supratentorial ependymoma zfta fusion-positive
+      - supratentorial ependymoma yap1 fusion-positive
+
+  - id: posterior_fossa_ependymoma
+    who_name: "Posterior fossa ependymoma"
+    category: ependymal_tumor
+    synonyms:
+      - posterior fossa ependymoma group pfa
+      - posterior fossa ependymoma group pfb
+
+  - id: spinal_ependymoma
+    who_name: "Spinal ependymoma"
+    category: ependymal_tumor
+    synonyms:
+      - spinal ependymoma mycn-amplified
+
+  - id: myxopapillary_ependymoma
+    who_name: "Myxopapillary ependymoma"
+    category: ependymal_tumor
+    synonyms: []
+
+  - id: subependymoma
+    who_name: "Subependymoma"
+    category: ependymal_tumor
+    synonyms: []
+
+  # ---- Choroid plexus tumors -------------------------------------------------
+  - id: choroid_plexus_papilloma
+    who_name: "Choroid plexus papilloma"
+    category: choroid_plexus_tumor
+    synonyms:
+      - atypical choroid plexus papilloma
+
+  - id: choroid_plexus_carcinoma
+    who_name: "Choroid plexus carcinoma"
+    category: choroid_plexus_tumor
+    synonyms: []
+
+  # ---- Embryonal tumors -------------------------------------------------------
+  - id: medulloblastoma_wnt_activated
+    who_name: "Medulloblastoma, WNT-activated"
+    category: embryonal_tumor
+    synonyms:
+      - wnt medulloblastoma
+      - wnt-activated medulloblastoma
+
+  - id: medulloblastoma_shh_activated
+    who_name: "Medulloblastoma, SHH-activated"
+    category: embryonal_tumor
+    synonyms:
+      - shh medulloblastoma
+      - medulloblastoma shh-activated and tp53-wildtype
+      - medulloblastoma shh-activated and tp53-mutant
+
+  - id: medulloblastoma_non_wnt_non_shh
+    who_name: "Medulloblastoma, non-WNT/non-SHH"
+    category: embryonal_tumor
+    synonyms:
+      - group 3 medulloblastoma
+      - group 4 medulloblastoma
+
+  - id: medulloblastoma_histologically_defined
+    who_name: "Medulloblastoma, histologically defined"
+    category: embryonal_tumor
+    synonyms:
+      - medulloblastoma
+      - classic medulloblastoma
+      - desmoplastic nodular medulloblastoma
+      - large cell/anaplastic medulloblastoma
+
+  - id: atypical_teratoid_rhabdoid_tumor
+    who_name: "Atypical teratoid/rhabdoid tumor"
+    category: embryonal_tumor
+    synonyms:
+      - atrt
+
+  - id: embryonal_tumor_multilayered_rosettes
+    who_name: "Embryonal tumor with multilayered rosettes"
+    category: embryonal_tumor
+    synonyms:
+      - etmr
+
+  - id: cns_neuroblastoma_foxr2_activated
+    who_name: "CNS neuroblastoma, FOXR2-activated"
+    category: embryonal_tumor
+    synonyms: []
+
+  - id: cns_tumor_bcor_itd
+    who_name: "CNS tumor with BCOR internal tandem duplication"
+    category: embryonal_tumor
+    synonyms: []
+
+  - id: cns_embryonal_tumor_nos
+    who_name: "CNS embryonal tumor"
+    category: embryonal_tumor
+    synonyms:
+      - primitive neuroectodermal tumor
+      - pnet
+
+  # ---- Pineal tumors -----------------------------------------------------------
+  - id: pineocytoma
+    who_name: "Pineocytoma"
+    category: pineal_tumor
+    synonyms: []
+
+  - id: pineal_parenchymal_tumor_intermediate
+    who_name: "Pineal parenchymal tumor of intermediate differentiation"
+    category: pineal_tumor
+    synonyms: []
+
+  - id: pineoblastoma
+    who_name: "Pineoblastoma"
+    category: pineal_tumor
+    synonyms: []
+
+  - id: papillary_tumor_pineal_region
+    who_name: "Papillary tumor of the pineal region"
+    category: pineal_tumor
+    synonyms: []
+
+  # ---- Cranial and paraspinal nerve tumors --------------------------------
+  - id: schwannoma
+    who_name: "Schwannoma"
+    category: cranial_and_paraspinal_nerve_tumor
+    synonyms:
+      - vestibular schwannoma
+      - acoustic neuroma
+
+  - id: neurofibroma
+    who_name: "Neurofibroma"
+    category: cranial_and_paraspinal_nerve_tumor
+    synonyms: []
+
+  - id: malignant_peripheral_nerve_sheath_tumor
+    who_name: "Malignant peripheral nerve sheath tumor"
+    category: cranial_and_paraspinal_nerve_tumor
+    synonyms:
+      - mpnst
+
+  - id: paraganglioma
+    who_name: "Paraganglioma"
+    category: cranial_and_paraspinal_nerve_tumor
+    synonyms: []
+
+  # ---- Meningioma -----------------------------------------------------------
+  - id: meningioma
+    who_name: "Meningioma"
+    category: meningioma
+    synonyms:
+      - atypical meningioma
+      - anaplastic meningioma
+      - malignant meningioma
+      - meningothelial tumor
+
+  # ---- Hematolymphoid tumors --------------------------------------------------
+  - id: primary_dlbcl_cns
+    who_name: "Primary diffuse large B-cell lymphoma of the CNS"
+    category: hematolymphoid_tumor
+    synonyms:
+      - primary cns lymphoma
+      - pcnsl
+      - dlbcl of the cns
+
+  - id: immunodeficiency_associated_cns_lymphoma
+    who_name: "Immunodeficiency-associated CNS lymphoma"
+    category: hematolymphoid_tumor
+    synonyms: []
+
+  - id: langerhans_cell_histiocytosis
+    who_name: "Langerhans cell histiocytosis"
+    category: hematolymphoid_tumor
+    synonyms:
+      - lch
+
+  # ---- Germ cell tumors -------------------------------------------------------
+  - id: germinoma
+    who_name: "Germinoma"
+    category: germ_cell_tumor
+    synonyms: []
+
+  - id: teratoma
+    who_name: "Mature teratoma"
+    category: germ_cell_tumor
+    synonyms:
+      - immature teratoma
+      - teratoma with somatic-type malignancy
+
+  - id: yolk_sac_tumor
+    who_name: "Yolk sac tumor"
+    category: germ_cell_tumor
+    synonyms:
+      - endodermal sinus tumor
+
+  - id: choriocarcinoma
+    who_name: "Choriocarcinoma"
+    category: germ_cell_tumor
+    synonyms: []
+
+  - id: mixed_germ_cell_tumor
+    who_name: "Mixed germ cell tumor"
+    category: germ_cell_tumor
+    synonyms: []
+
+  # ---- Sellar region ---------------------------------------------------------
+  - id: adamantinomatous_craniopharyngioma
+    who_name: "Adamantinomatous craniopharyngioma"
+    category: sellar_region_tumor
+    synonyms:
+      - craniopharyngioma
+
+  - id: papillary_craniopharyngioma
+    who_name: "Papillary craniopharyngioma"
+    category: sellar_region_tumor
+    synonyms: []
+
+  - id: pituitary_adenoma
+    who_name: "Pituitary adenoma/PitNET"
+    category: sellar_region_tumor
+    synonyms:
+      - pitnet
+      - pituitary neuroendocrine tumor
+
+  # ---- Metastases --------------------------------------------------------------
+  - id: brain_metastasis
+    who_name: "Metastases to the brain and spinal cord parenchyma"
+    category: cns_metastasis
+    synonyms:
+      - metastatic brain tumor
+      - brain metastases
+      - secondary brain tumor
+
+  - id: leptomeningeal_metastasis
+    who_name: "Metastases to the meninges"
+    category: cns_metastasis
+    synonyms:
+      - leptomeningeal disease
+      - leptomeningeal carcinomatosis
+      - meningeal carcinomatosis

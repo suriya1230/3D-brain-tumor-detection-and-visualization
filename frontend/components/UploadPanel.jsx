@@ -1,7 +1,22 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { INK, MODALITIES } from "./theme";
+import { MODALITIES } from "./theme";
+
+// Light theme, matching the landing page — the dark INK palette from
+// theme.js is the 3D viewer's look (BrainViewer/EvidencePanel), kept
+// deliberately separate; this is the pre-upload screen, styled like the
+// rest of the marketing-facing pages instead.
+const LT = {
+  bg: "#eef1f5",
+  card: "#ffffff",
+  border: "rgba(30,40,60,0.1)",
+  text: "#2c3038",
+  dim: "#6b7180",
+  faint: "#8a90a0",
+  accent: "#3b82f6",
+  accentSoft: "rgba(59,130,246,0.08)",
+};
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -82,7 +97,7 @@ export default function UploadPanel({ onResult }) {
   }
 
   return (
-    <main style={S.wrap}>
+    <div style={S.wrap}>
       <div style={S.card}>
         <h1 style={S.h1}>Upload a scan</h1>
         <p style={S.lede}>
@@ -104,8 +119,8 @@ export default function UploadPanel({ onResult }) {
           onClick={() => inputRef.current?.click()}
           style={{
             ...S.drop,
-            borderColor: drag ? INK.brain : "rgba(79,216,255,0.25)",
-            background: drag ? "rgba(79,216,255,0.07)" : "transparent",
+            borderColor: drag ? LT.accent : "rgba(59,130,246,0.28)",
+            background: drag ? LT.accentSoft : "transparent",
           }}
         >
           <p style={S.dropText}>
@@ -130,8 +145,8 @@ export default function UploadPanel({ onResult }) {
               <span
                 style={{
                   ...S.tick,
-                  background: files[m.key] ? INK.brain : "transparent",
-                  borderColor: files[m.key] ? INK.brain : INK.dim,
+                  background: files[m.key] ? LT.accent : "transparent",
+                  borderColor: files[m.key] ? LT.accent : LT.faint,
                 }}
               />
               <span style={S.slotName}>
@@ -172,48 +187,50 @@ export default function UploadPanel({ onResult }) {
           diagnosis.
         </p>
       </div>
-    </main>
+    </div>
   );
 }
 
 const FONT = "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif";
 
 const S = {
+  // No own min-height/background — this is embedded inside the landing
+  // page's layout now, not a standalone screen, so it shouldn't fight the
+  // parent page's own background or force a full-viewport height.
   wrap: {
-    minHeight: "100dvh",
     display: "grid",
     placeItems: "center",
-    padding: 24,
-    background: `radial-gradient(120% 90% at 50% 30%, ${INK.deep} 0%, ${INK.void} 70%)`,
+    padding: "0 24px",
     fontFamily: FONT,
-    color: INK.text,
+    color: LT.text,
   },
   card: {
     width: "min(520px, 100%)",
     padding: "34px 32px 26px",
-    borderRadius: 5,
-    border: "1px solid rgba(79,216,255,0.16)",
-    background: "rgba(4,10,18,0.6)",
+    borderRadius: 18,
+    border: `1px solid ${LT.border}`,
+    background: LT.card,
+    boxShadow: "0 20px 60px -24px rgba(20,40,80,0.18)",
   },
   h1: { margin: 0, fontSize: 22, fontWeight: 600, letterSpacing: "-0.015em" },
   lede: {
     margin: "8px 0 22px",
     fontSize: 13,
     lineHeight: 1.6,
-    color: INK.dim,
+    color: LT.dim,
     maxWidth: "44ch",
   },
   drop: {
     padding: "26px 20px",
-    borderRadius: 4,
+    borderRadius: 12,
     borderWidth: 1,
     borderStyle: "dashed",
     textAlign: "center",
     cursor: "pointer",
     transition: "background 140ms ease, border-color 140ms ease",
   },
-  dropText: { margin: 0, fontSize: 13.5 },
-  dropSub: { margin: "6px 0 0", fontSize: 11.5, color: INK.dim },
+  dropText: { margin: 0, fontSize: 13.5, color: LT.text },
+  dropSub: { margin: "6px 0 0", fontSize: 11.5, color: LT.dim },
   slots: {
     listStyle: "none",
     margin: "22px 0 0",
@@ -226,16 +243,16 @@ const S = {
     flex: "0 0 auto",
     width: 11,
     height: 11,
-    borderRadius: 2,
+    borderRadius: 3,
     borderWidth: 1,
     borderStyle: "solid",
   },
   slotName: { flex: "0 0 118px", fontWeight: 500 },
-  slotHint: { fontWeight: 400, color: INK.dim },
+  slotHint: { fontWeight: 400, color: LT.dim },
   slotFile: {
     flex: 1,
     minWidth: 0,
-    color: INK.dim,
+    color: LT.dim,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -244,32 +261,33 @@ const S = {
     margin: "18px 0 0",
     fontSize: 12.5,
     lineHeight: 1.55,
-    color: "#ff8a9c",
+    color: "#d64158",
   },
   cta: {
     width: "100%",
     marginTop: 24,
-    padding: "12px 16px",
+    padding: "13px 16px",
     fontFamily: FONT,
     fontSize: 13.5,
-    fontWeight: 500,
-    color: INK.void,
-    background: INK.brain,
+    fontWeight: 600,
+    color: "#fff",
+    background: LT.accent,
     border: "none",
-    borderRadius: 3,
+    borderRadius: 10,
+    boxShadow: "0 10px 24px -8px rgba(59,130,246,0.55)",
   },
   wait: {
     margin: "12px 0 0",
     fontSize: 11.5,
     lineHeight: 1.55,
-    color: INK.dim,
+    color: LT.dim,
   },
   foot: {
     margin: "24px 0 0",
     paddingTop: 18,
-    borderTop: "1px solid rgba(79,216,255,0.12)",
+    borderTop: `1px solid ${LT.border}`,
     fontSize: 10.5,
     lineHeight: 1.6,
-    color: "#43606f",
+    color: LT.faint,
   },
 };

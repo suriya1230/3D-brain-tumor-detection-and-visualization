@@ -1,0 +1,26 @@
+{
+  "_comment": "Manually fetched, one at a time, by a human action — not by a crawler. NCBI Bookshelf's own copyright page prohibits automated/systematic retrieval, so the ingest code (backend/app/knowledge/ingest/nci_pdq.py) only ever parses these local files; it makes no HTTP requests. Adding more summaries means repeating this manual capture step deliberately and appending an entry here.",
+  "licence": "U.S. Government work / public domain, per NCBI Bookshelf copyright notice (https://www.ncbi.nlm.nih.gov/books/about/copyright/): \"No permission is needed to reproduce or distribute this type of content, but the authoring institute or agency must be given appropriate attribution.\" Checked 2026-09-12.",
+  "documents": [
+    {
+      "nbk_id": "NBK65982",
+      "html_file": "NBK65982.html",
+      "title": "Central Nervous System Tumors Treatment (PDQ®): Health Professional Version",
+      "url": "https://www.ncbi.nlm.nih.gov/books/NBK65982/",
+      "pmid": "26389419",
+      "published": "2025-03-28",
+      "retrieved": "2026-09-12",
+      "publisher": "National Cancer Institute (US)"
+    },
+    {
+      "nbk_id": "NBK65893",
+      "html_file": "NBK65893.html",
+      "title": "Primary Central Nervous System Lymphoma Treatment (PDQ®): Health Professional Version",
+      "url": "https://www.ncbi.nlm.nih.gov/books/NBK65893/",
+      "pmid": "26389331",
+      "published": "2024-09-13",
+      "retrieved": "2026-09-12",
+      "publisher": "National Cancer Institute (US)"
+    }
+  ]
+}
