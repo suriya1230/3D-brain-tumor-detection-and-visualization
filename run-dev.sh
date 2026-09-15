@@ -9,6 +9,8 @@ if [ ! -d backend/.venv ]; then
 fi
 
 trap 'kill 0' EXIT
+# Frontend must run on 3001 - backend/app/main.py's CORS allowlist only
+# accepts that origin by default (see ALLOW_ORIGINS).
 ( cd backend && .venv/bin/uvicorn app.main:app --port 8000 --reload ) &
-( cd frontend && npm run dev ) &
+( cd frontend && npm run dev -- -p 3001 ) &
 wait
