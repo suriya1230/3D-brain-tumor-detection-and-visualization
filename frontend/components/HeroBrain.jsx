@@ -28,7 +28,7 @@ function CameraRig({ radius }) {
   // bounding sphere.
   const { camera } = useThree();
   useEffect(() => {
-    camera.position.set(0, 0, radius * 2.5);
+    camera.position.set(0, 0, radius * 1.8);
     camera.near = radius * 0.05;
     camera.far = radius * 20;
     camera.lookAt(0, 0, 0);
@@ -94,8 +94,16 @@ function RotatingBrain() {
 }
 
 export default function HeroBrain({ className, style }) {
+  // position:absolute + inset:0 rather than width/height:100% - inside a
+  // flex-grow parent (this hero's layout), a percentage height on a normal-
+  // flow child doesn't reliably resolve against the parent's flexed size in
+  // every browser, and r3f's <Canvas> silently falls back to the HTML
+  // canvas default of 300x150 when that happens. Absolute positioning
+  // resolves against the nearest positioned ancestor's actual computed
+  // box instead, which is definite here regardless of how that box's
+  // height was derived. Requires the parent to be position:relative.
   return (
-    <div className={className} style={{ width: "100%", height: "100%", ...style }}>
+    <div className={className} style={{ position: "absolute", inset: 0, ...style }}>
       <Canvas
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: false }}

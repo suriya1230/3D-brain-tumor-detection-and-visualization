@@ -1,0 +1,31 @@
+# Optional second hallucination check (app/knowledge/hallucination_detector.py),
+# on top of the Evidence Validator (app/knowledge/validator.py) that already
+# runs unconditionally. Kept OUT of requirements-knowledge.txt on purpose -
+# it drags in two real dependency conflicts with requirements.txt (Phase 1,
+# segmentation), both already resolved IN THIS REPO as of 2026-09-18:
+#
+#   1. LettuceDetect requires torch>=2.6.0; requirements.txt was pinned to
+#      2.4.1. Resolved by upgrading requirements.txt to torch==2.6.0 -
+#      verified after upgrading: checkpoint load, the full MONAI
+#      preprocessing transform chain, a sliding_window_inference forward
+#      pass, and meshing.py's marching-cubes/trimesh path all ran correctly
+#      against real retained job data. NOT re-verified: the actual holdout
+#      Dice numbers - that needs the real 150-case BraTS set, not bundled
+#      in this repo.
+#
+#   2. Installing this file pulls in numpy>=2.2.2 (LettuceDetect's own
+#      dependency chain), but MONAI 1.4.0 declares numpy<2.0 and pip will
+#      print a dependency-conflict warning for it. Also verified empirically
+#      rather than trusted on faith: the same smoke tests above passed with
+#      numpy 2.2.6 installed. MONAI's upper bound appears conservative for
+#      this project's actual usage (SegResNet + the specific transforms
+#      used here), not something this repo hit in practice - but it's
+#      MONAI's declared constraint being violated, not this project's, so
+#      re-verify if you upgrade MONAI itself later.
+#
+# hallucination_detector.py still degrades to a no-op if `lettucedetect`
+# isn't importable, so the rest of the app works with or without this
+# installed - that contract didn't change, only the venv now satisfies both
+# sides instead of needing a separate process for this.
+
+lettucedetect

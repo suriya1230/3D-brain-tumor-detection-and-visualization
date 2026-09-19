@@ -5,6 +5,17 @@ import { INK } from "./theme";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// Word-boundary truncation, not a hard character cut - "Diagnosis of
+// pseudoprogressi…" is not a citation anyone can follow or distinguish
+// from a different paper with a similar opening word.
+function truncateTitle(title, max = 56) {
+  if (title.length <= max) return title;
+  const cut = title.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  const safe = lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return `${safe}…`;
+}
+
 function citeLabel(s) {
   if (s.source_type === "nci_pdq") return "NCI PDQ";
   if (s.source_type === "web") {
@@ -14,7 +25,7 @@ function citeLabel(s) {
       return "🌐 web";
     }
   }
-  return s.title.slice(0, 28);
+  return truncateTitle(s.title);
 }
 
 function Citations({ sources, chunkIds }) {
@@ -41,10 +52,54 @@ function Citations({ sources, chunkIds }) {
   );
 }
 
+// Shared between the freeform /ask answers and Phase 4's brain-effects /
+// treatment sections (§2 and §5) — both are now the same underlying
+// shape: {claims, sources, unsupported} from the citation-gated Phase 3
+// pipeline. See clinical_agent.py's module docstring for why §2/§5 moved
+// off a free-form, uncited LLM call.
+function CitedClaims({ data }) {
+  const claims = data?.claims || [];
+  const sources = data?.sources || [];
+  const unsupported = data?.unsupported || [];
+
+  if (!claims.length && !unsupported.length) {
+    return <p style={S.noEvidence}>The evidence corpus doesn't cover this.</p>;
+  }
+
+  return (
+    <>
+      {claims.length > 0 && (
+        <ul style={S.claimList}>
+          {claims.map((c, i) => (
+            <li key={i} style={S.claimItem}>
+              <p style={S.claimText}>{c.text}</p>
+              {c.flagged && (
+                <p style={S.flagNote} title={c.flag_reason || ""}>
+                  ⚠ flagged for review{c.flag_reason ? `: ${c.flag_reason}` : ""}
+                </p>
+              )}
+              <Citations sources={sources} chunkIds={c.chunk_ids} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {unsupported.length > 0 && (
+        <div style={S.unsupportedBox}>
+          <span style={S.unsupportedLabel}>Not addressed by current evidence</span>
+          {unsupported.map((u, i) => (
+            <p key={i} style={S.unsupportedText}>{u}</p>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 /* --------------------------------------------- Phase 4 default analysis */
-// The five automatic sections. No citations here on purpose — this is
-// general clinical-education explanation grounded in this case's own
-// segmentation, not a literature lookup. See clinical_agent.py.
+// Sections 3 and 4 are hardcoded, no model call at all. Section 1 is a
+// single unsourced LLM call for genuinely general classification-level
+// education. Sections 2 and 5 are citation-gated via CitedClaims above —
+// see clinical_agent.py.
 
 function Section({ number, title, children }) {
   return (
@@ -80,8 +135,11 @@ function DefaultAnalysis({ data }) {
     <>
       <Section number="1" title="What is the tumor?">
         <Fact label="Tumor detected" value={t.tumor_detected ? "Yes" : "No"} />
-        <Fact label="Predicted category" value={t.predicted_category} />
-        <Fact label="Tumor volume" value={t.tumor_volume_cc != null ? `${t.tumor_volume_cc} cm³` : null} />
+        <Fact label="Scan type assumption" value={t.scan_type_assumption} />
+        <Fact
+          label="Whole tumor (WT) volume"
+          value={t.whole_tumor_volume_cc != null ? `${t.whole_tumor_volume_cc} cm³` : null}
+        />
         <Fact
           label="Model holdout Dice"
           value={t.model_holdout_dice != null ? `${t.model_holdout_dice} (model performance, not this scan's confidence)` : null}
@@ -93,17 +151,7 @@ function DefaultAnalysis({ data }) {
         {b.locations?.length > 0 && (
           <Fact label="Location" value={b.locations.join(", ")} />
         )}
-        {b.explanation && <p style={S.sectionText}>{b.explanation}</p>}
-        {b.possible_effects?.length > 0 && (
-          <>
-            <p style={S.sectionMeta}>Possible effects (not confirmed symptoms):</p>
-            <ul style={S.bulletList}>
-              {b.possible_effects.map((e, i) => (
-                <li key={i}>{e}</li>
-              ))}
-            </ul>
-          </>
-        )}
+        <CitedClaims data={b} />
       </Section>
 
       <Section number="3" title="How long has it been growing?">
@@ -128,14 +176,7 @@ function DefaultAnalysis({ data }) {
       </Section>
 
       <Section number="5" title="What treatments are used?">
-        {tr.explanation && <p style={S.sectionText}>{tr.explanation}</p>}
-        {tr.typical_categories?.length > 0 && (
-          <ul style={S.bulletList}>
-            {tr.typical_categories.map((c, i) => (
-              <li key={i}>{c}</li>
-            ))}
-          </ul>
-        )}
+        <CitedClaims data={tr} />
       </Section>
     </>
   );
@@ -164,7 +205,6 @@ function Warnings({ warnings }) {
 function AnswerBlock({ answer }) {
   if (!answer) return null;
   const isImaging = answer.routed_to === "imaging_agent";
-  const hasContent = answer.claims?.length > 0;
 
   return (
     <div style={S.answerBlock}>
@@ -180,32 +220,7 @@ function AnswerBlock({ answer }) {
         </div>
       )}
 
-      {!isImaging && hasContent && (
-        <ul style={S.claimList}>
-          {answer.claims.map((c, i) => (
-            <li key={i} style={S.claimItem}>
-              <p style={S.claimText}>{c.text}</p>
-              {c.flagged && (
-                <p style={S.flagNote} title={c.flag_reason || ""}>
-                  ⚠ flagged for review{c.flag_reason ? `: ${c.flag_reason}` : ""}
-                </p>
-              )}
-              <Citations sources={answer.sources || []} chunkIds={c.chunk_ids} />
-            </li>
-          ))}
-        </ul>
-      )}
-      {!isImaging && !hasContent && (
-        <p style={S.noEvidence}>The evidence corpus doesn't cover this.</p>
-      )}
-      {answer.unsupported?.length > 0 && (
-        <div style={S.unsupportedBox}>
-          <span style={S.unsupportedLabel}>Not addressed by current evidence</span>
-          {answer.unsupported.map((u, i) => (
-            <p key={i} style={S.unsupportedText}>{u}</p>
-          ))}
-        </div>
-      )}
+      {!isImaging && <CitedClaims data={answer} />}
     </div>
   );
 }

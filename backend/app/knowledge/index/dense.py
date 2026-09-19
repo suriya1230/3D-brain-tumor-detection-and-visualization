@@ -19,6 +19,7 @@ the loser can be dropped rather than guessed at.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Protocol
 
@@ -85,9 +86,30 @@ class MiniLMEmbedder:
         return self._model.encode(texts, show_progress_bar=False).tolist()
 
 
+_client_instance: chromadb.ClientAPI | None = None
+_client_lock = threading.Lock()
+
+
 def _client() -> chromadb.ClientAPI:
-    PERSIST_DIR.mkdir(parents=True, exist_ok=True)
-    return chromadb.PersistentClient(path=str(PERSIST_DIR))
+    """A real singleton, not just a lazily-constructed one - this used to
+    build a brand-new chromadb.PersistentClient on every call, which was
+    harmless when everything calling it ran on one thread in sequence.
+    clinical_agent.py now runs three retrieve_fn calls concurrently
+    (ThreadPoolExecutor), and multiple threads racing to construct a
+    PersistentClient against the same path for the first time hit a
+    thread-safety bug inside Chroma's own SharedSystemClient (a
+    check-then-create on a shared dict with no lock) - a real KeyError
+    seen in testing, not a hypothetical. The lock here is this module's
+    responsibility to hold, not something to route around by avoiding
+    Chroma's internals.
+    """
+    global _client_instance
+    if _client_instance is None:
+        with _client_lock:
+            if _client_instance is None:  # re-check: another thread may have won the race
+                PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+                _client_instance = chromadb.PersistentClient(path=str(PERSIST_DIR))
+    return _client_instance
 
 
 def build_dense_index(chunks: list[Chunk], embedder: Embedder) -> None:

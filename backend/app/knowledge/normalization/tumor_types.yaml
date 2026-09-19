@@ -459,8 +459,15 @@ entities:
     category: cns_metastasis
     synonyms:
       - metastatic brain tumor
+      # Plural too - matching is exact-alias, not stemmed, and NCI PDQ's
+      # own section heading is "Metastatic Brain Tumors" (plural). Without
+      # this, that heading doesn't match the singular alias at all, and a
+      # chunk whose own body text doesn't happen to repeat the phrase gets
+      # tagged tumour_types=[] despite living entirely under that heading.
+      - metastatic brain tumors
       - brain metastases
       - secondary brain tumor
+      - secondary brain tumors
 
   - id: leptomeningeal_metastasis
     who_name: "Metastases to the meninges"

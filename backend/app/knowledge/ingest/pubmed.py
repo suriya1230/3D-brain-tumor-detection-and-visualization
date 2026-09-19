@@ -280,7 +280,10 @@ def pubmed_record_to_sections(record: PubmedRecord, bioc: BiocDocument | None) -
         )
 
     if bioc:
-        pmc_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{record.pmcid.removeprefix('PMC')}/"
+        # Canonical PMC URL form - see normalization/urls.py's docstring
+        # for why this specific format, not the older
+        # www.ncbi.nlm.nih.gov/pmc/articles/ one.
+        pmc_url = f"https://pmc.ncbi.nlm.nih.gov/articles/PMC{record.pmcid.removeprefix('PMC')}"
         for idx, sec in enumerate(bioc.sections):
             label = sec.title or sec.section_type
             sections.append(

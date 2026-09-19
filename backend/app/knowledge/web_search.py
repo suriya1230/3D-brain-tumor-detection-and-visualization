@@ -21,6 +21,7 @@ from datetime import date, datetime
 
 import requests
 
+from app.knowledge.normalization.urls import normalize_url
 from app.knowledge.schema import Chunk
 
 TAVILY_URL = "https://api.tavily.com/search"
@@ -84,6 +85,11 @@ def search_web(query: str, *, max_results: int = 3) -> list[Chunk]:
         text = r.get("content", "")
         if not url or not text:
             continue
+        # Normalize BEFORE hashing - chunk_id is derived from the URL, so
+        # the same article under two different URL spellings (old vs
+        # current PMC link formats) would otherwise hash to two different
+        # chunk_ids and never dedupe. See normalization/urls.py.
+        url = normalize_url(url)
         chunks.append(
             Chunk(
                 chunk_id=hashlib.sha1(url.encode("utf-8")).hexdigest()[:16],

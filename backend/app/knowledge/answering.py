@@ -39,11 +39,36 @@ Rules:
 1. Every factual claim you make MUST be grounded in one or more of the \
 numbered passages below (each starts with a bracketed number like [1], \
 [2]), and MUST cite that number — never leave "sources" empty for a claim \
-you're actually making.
-2. If the question asks something the passages do not address, do not \
-guess or use outside knowledge — put that part of the question, in your \
-own words, into "unsupported" instead.
-3. Output ONLY a JSON object of this exact shape, nothing else. "sources" \
+you're actually making. The passage(s) you cite must actually support \
+THIS specific claim, not just be on a related topic — a passage about \
+salvage treatment of recurrence does not support a claim about first-line \
+therapy, even though both mention the same drug.
+2. "unsupported" is for naming what the passages DON'T cover — a short \
+phrase describing the gap, not an answer to it. Do not write a complete, \
+specific, confident-sounding sentence into "unsupported": if you know \
+enough to write that sentence, it is a claim, and belongs in "claims" \
+with a real citation, or it does not get written anywhere. Putting an \
+actual answer into "unsupported" is worse than leaving it out, because it \
+reads to the user as "the system doesn't know this" about something it \
+just told them.
+   WRONG: {"claims": [...], "unsupported": ["A tumor in the precentral \
+gyrus could cause motor deficits, and a tumor in the occipital lobe could \
+cause visual field loss."]} — this is a specific answer, mislabeled.
+   RIGHT: either cite it as a claim, or write {"unsupported": ["the \
+specific clinical deficits caused by a tumor in these locations"]} — \
+naming the gap, not filling it.
+3. If the case or question is specific to one tumor type (e.g. glioma), \
+do not answer with content that is specific to a DIFFERENT tumor type \
+(e.g. brain metastases, meningioma) even if a retrieved passage discusses \
+it — those are different diseases with different management, and stating \
+one's treatment as though it applies to the other is a factual error, not \
+a citation technicality.
+4. A statistic (survival, response rate, etc.) that applies to one \
+specific tumor type or grade must name that type/grade in the claim text \
+itself, not just in the cited passage — a number presented as though it's \
+general when it's actually specific to glioblastoma (say) will mislead a \
+reader whose case is a different, often less aggressive, tumor.
+5. Output ONLY a JSON object of this exact shape, nothing else. "sources" \
 holds the passage NUMBERS (integers, not the chunk_id text) that support \
 each claim:
 {"claims": [{"text": "...", "sources": [1, 3]}], "unsupported": ["..."]}
@@ -277,6 +302,23 @@ def answer_question(
     claims: list[Claim] = []
     unsupported: list[str] = list(parsed.get("unsupported", []))
     cited_ids: set[str] = set()
+
+    # Defense-in-depth, not enforcement: SYSTEM_PROMPT rule 2 tells the
+    # model "unsupported" is for naming a gap, not answering it, but a
+    # 2026-09 review found real cases of a full, specific, uncited answer
+    # sitting in "unsupported" - the worst possible place for it, since it
+    # reads to the user as "the system doesn't know this" about something
+    # it just told them. This can't fix a bad model response (the content
+    # already went out uncited either way), but it makes the failure mode
+    # visible in logs instead of only in someone's screenshot, the same
+    # spirit as phase1_bridge.py's find_leaked_confidence_language.
+    for u in unsupported:
+        if len(u.split()) > 20:
+            log.warning(
+                "unsupported entry looks like a full answer, not a gap "
+                "description (%d words): %r",
+                len(u.split()), u,
+            )
 
     def _resolve(raw_ids) -> list[str]:
         """Passage numbers (the documented format: 1-based index into

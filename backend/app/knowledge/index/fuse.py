@@ -50,6 +50,7 @@ def hybrid_search(
     top_k_fused: int = 20,
     source_types: list[str] | None = None,
     tumour_type: str | None = None,
+    exclude_tumour_types: list[str] | None = None,
 ) -> list[Chunk]:
     """Spec §5: retrieve top 20 fused. Callers passing these to an LLM
     should slice to 6-8 (spec §6) — that trim happens at the call site, not
@@ -76,6 +77,14 @@ def hybrid_search(
         if chunk is None:
             continue
         if tumour_type and tumour_type not in chunk.tumour_types:
+            continue
+        # An INCLUDE filter (tumour_type) can't do this job: Phase 4's
+        # model only ever assumes "glioma" broadly, not a specific WHO
+        # subtype id, so there's no single tumour_type value to include
+        # on. Excluding the tumour types this case definitely ISN'T
+        # (metastasis, meningioma) is the filter that's actually available
+        # - see knowledge_routes.py's NON_GLIOMA_TUMOUR_TYPES.
+        if exclude_tumour_types and any(t in chunk.tumour_types for t in exclude_tumour_types):
             continue
         results.append(chunk)
         if len(results) >= top_k_fused:

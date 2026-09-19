@@ -231,10 +231,15 @@ Aggregate holdout Dice tells you how the model performs on average — it does
 not tell you whether *this specific scan's* resection-cavity boundary is one
 of the trustworthy ones. Two things measure and surface that gap:
 
-- **`inference.py`** runs 4 test-time-augmentation passes (identity + one
-  flip per spatial axis) and measures how much the model disagrees with
+- **`inference.py`** runs test-time-augmentation passes (identity + one flip
+  per spatial axis, up to 4) and measures how much the model disagrees with
   itself under a symmetry it should be invariant to, separately per region
-  (TC/WT/ET/RC). Costs roughly 4x the inference time of a single pass.
+  (TC/WT/ET/RC). Each pass is a full extra forward pass over the volume — the
+  dominant cost of a request on CPU — so this is a real tradeoff, controlled
+  by `TTA_PASSES` (default `2`, i.e. roughly 2x a single pass instead of 4x).
+  Set `TTA_PASSES=1` to disable TTA entirely and get the original single-pass
+  speed back; region uncertainty then reports `None` rather than a
+  zero-from-one-sample that would misreport "measured, no disagreement."
 - **`clinical_agent.py`** reads that per-region score and, only for regions
   above a fixed threshold, appends a specific hedge to the `/explain`
   response's warnings (e.g. "ET boundary showed elevated disagreement ...

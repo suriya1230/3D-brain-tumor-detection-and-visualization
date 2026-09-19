@@ -61,4 +61,34 @@ def apply_evidence_validator(answer: Answer, chunk_lookup: dict[str, Chunk]) -> 
         flagged, reason = validate_claim(claim.text, claim.chunk_ids, chunk_lookup)
         claim.flagged = flagged
         claim.flag_reason = reason
+        if flagged:
+            claim.flag_sources.append("evidence_validator")
+    return answer
+
+
+# A 2026-09 review of a real report found a claim carrying two independent
+# flags (this validator's low word-overlap AND hallucination_detector.py's
+# LettuceDetect span flag) rendered anyway, with a warning icon — leaving
+# it to the reader to notice and overrule two validators that already
+# agreed it wasn't supported. Two agreeing signals is categorically
+# stronger than one; the policy below acts on that difference instead of
+# treating every flagged claim the same:
+#
+#   1 flag  -> render with the warning (a human can weigh one signal)
+#   2 flags -> drop the claim entirely, don't render it at all
+#   every surviving claim in the section still flagged -> abstain the
+#   whole section (claims=[]) rather than show a page of warned claims,
+#   which is the same "a validator that silently approves is worse than
+#   none" principle applied one level up: a section that's all caveats
+#   isn't actually telling the reader anything either.
+TWO_FLAG_DROP_THRESHOLD = 2
+
+
+def apply_citation_policy(answer: Answer) -> Answer:
+    kept = [c for c in answer.claims if len(c.flag_sources) < TWO_FLAG_DROP_THRESHOLD]
+    if kept and all(c.flagged for c in kept):
+        kept = []
+    answer.claims = kept
+    cited_ids = {cid for c in kept for cid in c.chunk_ids}
+    answer.sources = [s for s in answer.sources if s.chunk_id in cited_ids]
     return answer

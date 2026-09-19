@@ -1,9 +1,50 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import BrainViewer from "@/components/BrainViewer";
 import HeroBrain from "@/components/HeroBrain";
 import UploadPanel from "@/components/UploadPanel";
+
+// Fades a card up into place the first time it scrolls into view, and adds
+// a hover lift via the .ne-card class (see the <style> block in the page
+// component) — plain inline style objects can't express :hover or
+// transitions, so this is the one place the project steps outside that
+// convention.
+function RevealCard({ children, style, delay = 0 }) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          obs.unobserve(el);
+        }
+      },
+      { threshold: 0.15 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      className="ne-card"
+      style={{
+        ...style,
+        transitionDelay: `${delay}ms`,
+        opacity: visible ? 1 : 0,
+        transform: visible ? "translateY(0)" : "translateY(28px)",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 const NAV_LINKS = [
   { label: "How it works", href: "#how-it-works" },
@@ -85,45 +126,58 @@ export default function LandingPage() {
 
   return (
     <div style={S.page}>
-      <nav style={S.nav}>
-        <div style={S.logo}>NeuroEvidence</div>
-        <div style={S.navLinks}>
-          {NAV_LINKS.map((l) => (
-            <a key={l.href} href={l.href} style={S.navLink}>
-              {l.label}
-            </a>
-          ))}
-        </div>
-        <a href="#upload" style={S.navCta}>
-          Get Started
-        </a>
-      </nav>
+      <style>{`
+        .ne-card {
+          transition: opacity 0.6s ease, transform 0.6s ease,
+            box-shadow 0.25s ease, border-color 0.25s ease;
+        }
+        .ne-card:hover {
+          transform: translateY(-6px) !important;
+          box-shadow: 0 20px 44px -18px rgba(20, 40, 80, 0.3);
+          border-color: rgba(59, 130, 246, 0.35);
+        }
+      `}</style>
 
-      <header style={S.hero}>
-        <h1 style={S.heading}>
-          AI-Assisted Brain Tumor
-          <br />
-          <span style={S.headingAccent}>Segmentation &amp; Evidence</span>
-        </h1>
-        <p style={S.subtext}>
-          Upload an MRI, get a 3D tumor segmentation, and review AI-grounded
-          clinical evidence — reviewed by a clinician, not a diagnosis.
-        </p>
+      <header style={S.heroFull}>
+        <nav style={S.nav}>
+          <div style={S.logo}>NeuroEvidence</div>
+          <div style={S.navLinks}>
+            {NAV_LINKS.map((l) => (
+              <a key={l.href} href={l.href} style={S.navLink}>
+                {l.label}
+              </a>
+            ))}
+          </div>
+          <a href="#upload" style={S.navCta}>
+            Get Started
+          </a>
+        </nav>
 
-        <div style={S.brainStage}>
+        <div style={S.heroVisual}>
           <HeroBrain />
         </div>
 
-        <p style={S.disclaimer}>Research use only. Not for clinical diagnosis.</p>
+        <div style={S.heroContent}>
+          <h1 style={S.heading}>
+            AI-Assisted Brain Tumor
+            <br />
+            <span style={S.headingAccent}>Segmentation &amp; Evidence</span>
+          </h1>
+          <p style={S.subtext}>
+            Upload an MRI, get a 3D tumor segmentation, and review AI-grounded
+            clinical evidence — reviewed by a clinician, not a diagnosis.
+          </p>
+          <p style={S.disclaimer}>Research use only. Not for clinical diagnosis.</p>
+        </div>
       </header>
 
       <section id="how-it-works" style={S.steps}>
-        {STEPS.map((s) => (
-          <div key={s.n} style={S.stepCard}>
+        {STEPS.map((s, i) => (
+          <RevealCard key={s.n} style={S.stepCard} delay={i * 90}>
             <span style={S.stepNum}>{s.n}</span>
             <h3 style={S.stepTitle}>{s.title}</h3>
             <p style={S.stepBody}>{s.body}</p>
-          </div>
+          </RevealCard>
         ))}
       </section>
 
@@ -138,11 +192,11 @@ export default function LandingPage() {
         </p>
 
         <div style={S.cardGrid}>
-          {EVIDENCE_POINTS.map((p) => (
-            <div key={p.title} style={S.stepCard}>
+          {EVIDENCE_POINTS.map((p, i) => (
+            <RevealCard key={p.title} style={S.stepCard} delay={i * 90}>
               <h3 style={S.stepTitle}>{p.title}</h3>
               <p style={S.stepBody}>{p.body}</p>
-            </div>
+            </RevealCard>
           ))}
         </div>
 
@@ -167,11 +221,11 @@ export default function LandingPage() {
         </p>
 
         <div style={S.cardGrid}>
-          {RESEARCH_POINTS.map((p) => (
-            <div key={p.title} style={S.stepCard}>
+          {RESEARCH_POINTS.map((p, i) => (
+            <RevealCard key={p.title} style={S.stepCard} delay={i * 90}>
               <h3 style={S.stepTitle}>{p.title}</h3>
               <p style={S.stepBody}>{p.body}</p>
-            </div>
+            </RevealCard>
           ))}
         </div>
       </section>
@@ -183,6 +237,17 @@ export default function LandingPage() {
         </p>
         <UploadPanel onResult={setResult} />
       </section>
+
+      <footer style={S.footer}>
+        <span>© 2026 NeuroEvidence. All rights reserved.</span>
+        <span style={S.footerDivider}>·</span>
+        <span>
+          Suriya, AI Researcher —{" "}
+          <a href="mailto:ssuriyas380@gmail.com" style={S.footerLink}>
+            ssuriyas380@gmail.com
+          </a>
+        </span>
+      </footer>
     </div>
   );
 }
@@ -198,26 +263,48 @@ const S = {
     color: "#33383f",
     overflowX: "hidden",
   },
+  heroFull: {
+    position: "relative",
+    minHeight: "100vh",
+    overflow: "hidden",
+    background: "#050a13",
+    display: "flex",
+    flexDirection: "column",
+  },
+  heroVisual: {
+    position: "relative",
+    flex: "1 1 auto",
+    minHeight: 340,
+  },
   nav: {
+    position: "relative",
+    zIndex: 1,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    maxWidth: 1200,
-    margin: "0 auto",
+    width: "100%",
     padding: "28px 32px",
+    boxSizing: "border-box",
   },
   logo: {
     padding: "10px 22px",
     borderRadius: 999,
-    border: "1px solid rgba(59,130,246,0.35)",
-    background: "rgba(255,255,255,0.6)",
-    color: "#3b82f6",
+    border: "1px solid rgba(125,196,255,0.35)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#8fd0ff",
     fontWeight: 600,
     fontSize: 15,
   },
-  navLinks: { display: "flex", gap: 32 },
+  navLinks: {
+    display: "flex",
+    gap: 32,
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    transform: "translate(-50%, -50%)",
+  },
   navLink: {
-    color: "#4a4f57",
+    color: "#cfd4de",
     textDecoration: "none",
     fontSize: 14.5,
   },
@@ -225,45 +312,37 @@ const S = {
     padding: "11px 22px",
     borderRadius: 999,
     background: "#fff",
-    boxShadow: "0 1px 3px rgba(20,20,30,0.12)",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
     color: "#20242b",
     textDecoration: "none",
     fontWeight: 600,
     fontSize: 14,
   },
-  hero: {
+  heroContent: {
+    flex: "0 0 auto",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     textAlign: "center",
-    padding: "40px 24px 60px",
+    padding: "0 24px 56px",
   },
   heading: {
-    margin: "24px 0 0",
-    fontSize: "clamp(40px, 6.5vw, 76px)",
+    margin: 0,
+    fontSize: "clamp(36px, 6vw, 68px)",
     fontWeight: 600,
     lineHeight: 1.08,
     letterSpacing: "-0.02em",
-    color: "#2c3038",
+    color: "#f4f7fb",
   },
-  headingAccent: { color: "#3b82f6" },
+  headingAccent: { color: "#7dc4ff" },
   subtext: {
     margin: "26px 0 0",
     fontSize: 18,
     lineHeight: 1.6,
-    color: "#6b7180",
+    color: "#c7ccd6",
     maxWidth: 620,
   },
-  brainStage: {
-    width: "min(680px, 92vw)",
-    height: "min(560px, 62vw)",
-    margin: "8px 0 32px",
-    borderRadius: 28,
-    overflow: "hidden",
-    boxShadow:
-      "0 30px 80px -20px rgba(20,40,80,0.35), 0 0 0 1px rgba(20,40,80,0.06)",
-  },
-  disclaimer: { margin: "0", fontSize: 12.5, color: "#8a90a0" },
+  disclaimer: { margin: "28px 0 0", fontSize: 12.5, color: "#8a94a8" },
 
   steps: {
     display: "grid",
@@ -359,4 +438,19 @@ const S = {
     fontSize: 15,
     color: "#6b7180",
   },
+
+  footer: {
+    display: "flex",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 10,
+    padding: "28px 24px 36px",
+    borderTop: "1px solid rgba(30,40,60,0.08)",
+    fontSize: 13,
+    color: "#8a90a0",
+    textAlign: "center",
+  },
+  footerDivider: { color: "#c3c8d2" },
+  footerLink: { color: "#3b82f6", textDecoration: "none" },
 };

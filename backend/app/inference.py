@@ -10,6 +10,7 @@ different preprocessing pipeline and the reported metrics no longer apply.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,6 +35,18 @@ MODALITIES = ["t1n", "t1c", "t2w", "t2f"]
 REGION_NAMES = ["TC", "WT", "ET", "RC"]      # model output channel order
 PIXDIM = (1.0, 1.0, 1.0)
 ROI = (96, 96, 96)
+
+# Each additional TTA pass (see predict()) is a full extra sliding-window
+# forward pass over the whole volume - on CPU this is the dominant cost of
+# a request, so this is a real speed/uncertainty-signal tradeoff, not a
+# free knob. 4 was the original "identity + one flip per axis" set; 2
+# (identity + one flip) roughly halves inference time versus that while
+# still measuring some self-disagreement. Set TTA_PASSES=1 to disable TTA
+# entirely and go back to the original single-pass speed - region
+# uncertainty then reports None (not 0.0 - 0.0 would claim "measured, no
+# disagreement" when really nothing was measured at all).
+_ALL_TTA_DIMS = [None, [2], [3], [4]]
+TTA_PASSES = max(1, min(int(os.getenv("TTA_PASSES", "2")), len(_ALL_TTA_DIMS)))
 
 
 @dataclass
@@ -153,18 +166,19 @@ class Segmenter:
         x = crop.unsqueeze(0).to(self.device)
         use_amp = self.device.type == "cuda"
 
-        # --- test-time augmentation: identity + one flip per spatial axis --
-        # 4 passes, not the full 8-way combination, so this stays tractable
-        # on CPU inference. Flip is applied to the already-padded tensor and
+        # --- test-time augmentation: identity + up to 3 axis flips ----------
+        # TTA_PASSES (module constant) controls how many of these actually
+        # run - each one is a full extra forward pass, the dominant cost of
+        # a request on CPU. Flip is applied to the already-padded tensor and
         # undone on the logits before anything else touches them, so the pad
         # region still lands in the same place for every pass. Comparing the
-        # 4 outputs measures how much the model disagrees with itself under
-        # a symmetry it should in principle be invariant to - that
+        # outputs measures how much the model disagrees with itself under a
+        # symmetry it should in principle be invariant to - that
         # disagreement is a per-region uncertainty *signal*, not a
         # calibrated error probability (see meshing.py's meta["confidence"]
         # for the honesty caveat, matching how this project already treats
         # mean_probability).
-        tta_dims = [None, [2], [3], [4]]
+        tta_dims = _ALL_TTA_DIMS[:TTA_PASSES]
         passes = []
         for dims in tta_dims:
             xin = torch.flip(x, dims=dims) if dims else x
@@ -195,9 +209,15 @@ class Segmenter:
         region_uncertainty: dict[str, float | None] = {}
         for i, name in enumerate(REGION_NAMES):
             region_mask = p[i] > 0.5
-            region_uncertainty[name] = (
-                float(p_std[i][region_mask].mean()) if region_mask.any() else None
-            )
+            # Fewer than 2 passes means nothing was actually compared -
+            # None, not a std of 0.0 computed from a single sample, which
+            # would misreport "no disagreement" as if it had been measured.
+            if len(tta_dims) < 2:
+                region_uncertainty[name] = None
+            else:
+                region_uncertainty[name] = (
+                    float(p_std[i][region_mask].mean()) if region_mask.any() else None
+                )
 
         return Prediction(
             seg=seg, prob=prob, affine=affine, t1n=t1n,

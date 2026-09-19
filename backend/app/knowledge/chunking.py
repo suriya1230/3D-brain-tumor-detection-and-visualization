@@ -123,7 +123,17 @@ def chunk_section(section: RawSection, *, max_tokens: int = MAX_TOKENS, overlap_
                 published=section.published,
                 retrieved=section.retrieved,
                 licence=section.licence,
-                tumour_types=find_tumour_types_in_text(span_text),
+                # Include the section heading path, not just the span's
+                # own text: a chunk under "Metastatic Brain Tumors >
+                # Diagnostic Evaluation > Imaging tests" can be entirely
+                # about imaging technique with no tumour-type keyword in
+                # its own body at all, and was ending up tagged
+                # tumour_types=[] - untagged, not correctly excluded -
+                # found via a 2026-09 review that traced metastasis
+                # content leaking into glioma-only answers back to this.
+                tumour_types=find_tumour_types_in_text(
+                    f"{section.section or ''} {span_text}"
+                ),
                 evidence_level=section.evidence_level,
                 token_count=count_tokens(span_text),
             )

@@ -50,6 +50,15 @@ class Claim(BaseModel):
     # silently approves is worse than none").
     flagged: bool = False
     flag_reason: str | None = None
+    # Which independent validator(s) flagged this claim - "evidence_validator"
+    # (validator.py's number/entity check), "lettucedetect"
+    # (hallucination_detector.py's model-based span check), both, or
+    # neither. Tracked separately from flag_reason (free text, meant for a
+    # human to read) so validator.py's apply_citation_policy can count
+    # independent signals reliably instead of string-matching flag_reason -
+    # two validators agreeing is a stronger signal than either one alone,
+    # per a 2026-09 review that found this exact case in a real report.
+    flag_sources: list[str] = Field(default_factory=list)
 
     def is_supported(self) -> bool:
         return len(self.chunk_ids) > 0

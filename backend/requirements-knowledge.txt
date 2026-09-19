@@ -1,6 +1,9 @@
 # Phase 3 knowledge/retrieval subsystem. Installed into the same venv as
 # requirements.txt (Phase 1's imaging pipeline) — pinned here to versions
-# known compatible with the torch==2.4.1 CPU wheel already pinned there.
+# known compatible with the torch==2.6.0 CPU wheel already pinned there
+# (upgraded from 2.4.1 on 2026-09-18 for requirements-hallucination.txt;
+# transformers==4.49.0 below was already >=2.5-compatible, so this upgrade
+# didn't require re-pinning anything in this file).
 #
 # transformers>=5.0 drops support for torch<2.5 and disables PyTorch model
 # loading entirely (AutoModel becomes unusable) — do not let pip float this

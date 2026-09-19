@@ -1,6 +1,18 @@
 # CPU wheels. For GPU, install torch from https://pytorch.org first, then
 # `pip install -r requirements.txt` and let pip keep the existing torch.
-torch==2.4.1
+#
+# Upgraded from 2.4.1 to 2.6.0 (2026-09-18) to satisfy LettuceDetect's
+# torch>=2.6.0 requirement (requirements-hallucination.txt) - verified after
+# upgrading: checkpoint still loads (torch.load(..., weights_only=False) in
+# inference.py, unaffected by 2.6's weights_only default change) and a
+# sliding_window_inference forward pass on the loaded weights produces the
+# correct output shape with no errors. NOT re-verified: the actual holdout
+# Dice numbers in test_metrics.csv - that needs the real 150-case BraTS
+# holdout set, which isn't bundled in this repo, so it was not possible to
+# reproduce the eval run here. If those numbers matter for a decision you're
+# making, re-run backend's eval script against the holdout set before
+# trusting them under the new torch version.
+torch==2.6.0
 monai==1.4.0
 nibabel==5.3.2
 numpy==1.26.4
