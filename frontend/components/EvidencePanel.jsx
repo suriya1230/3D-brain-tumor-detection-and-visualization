@@ -151,35 +151,43 @@ function CitedClaims({ data }) {
     <>
       {claims.length > 0 && (
         <ul style={S.claimList}>
-          {claims.map((c, i) => (
-            <SeqBlock key={i} text={c.text}>
-              {({ isActive, onComplete }) => (
-                <li style={S.claimItem}>
-                  <p style={S.claimText}>
-                    <StreamingText text={c.text} speed={SEQ_SPEED} cursor={isActive} onComplete={onComplete} />
-                  </p>
-                  {c.flagged && (
-                    <p style={S.flagNote} title={c.flag_reason || ""}>
-                      ⚠ flagged for review{c.flag_reason ? `: ${c.flag_reason}` : ""}
+          {claims.map((c, i) => {
+            // A flagged claim failed the citation/hallucination check -
+            // its text is exactly the thing that might be wrong, so it
+            // must never render as if it were normal cited content. Swap
+            // in a visible withheld-notice instead of the claim text (not
+            // a silent drop - a clinician should be able to tell something
+            // was removed here, not just see a shorter list) and skip its
+            // citations, since they'd be citing text that isn't shown.
+            const displayText = c.flagged
+              ? "Claim withheld — failed automated verification against its cited source."
+              : c.text;
+            return (
+              <SeqBlock key={i} text={displayText}>
+                {({ isActive, onComplete }) => (
+                  <li style={S.claimItem}>
+                    <p style={c.flagged ? S.claimWithheld : S.claimText}>
+                      <StreamingText text={displayText} speed={SEQ_SPEED} cursor={isActive} onComplete={onComplete} />
                     </p>
-                  )}
-                  <Citations sources={sources} chunkIds={c.chunk_ids} />
-                </li>
-              )}
-            </SeqBlock>
-          ))}
+                    {c.flagged ? (
+                      <p style={S.flagNote} title={c.flag_reason || ""}>
+                        ⚠ {c.flag_reason || "flagged for review"}
+                      </p>
+                    ) : (
+                      <Citations sources={sources} chunkIds={c.chunk_ids} />
+                    )}
+                  </li>
+                )}
+              </SeqBlock>
+            );
+          })}
         </ul>
       )}
-      {unsupported.length > 0 && (
-        <div style={S.unsupportedBox}>
-          <span style={S.unsupportedLabel}>Not addressed by current evidence</span>
-          {unsupported.map((u, i) => (
-            <p key={i} style={S.unsupportedText}>
-              <Seq text={u} />
-            </p>
-          ))}
-        </div>
-      )}
+      {/* "Not addressed by current evidence" box removed from display per
+          user request - the underlying data/citation-gating is untouched,
+          this is a UI-only hide. unsupported items are simply never
+          rendered, not passed through Seq, so they don't occupy a slot in
+          the reveal sequence either. */}
     </>
   );
 }
@@ -228,10 +236,33 @@ function DefaultAnalysis({ data }) {
           label="Whole tumor (WT) volume"
           value={t.whole_tumor_volume_cc != null ? `${t.whole_tumor_volume_cc} cm³` : null}
         />
+        {/* Two different metrics on two different, non-overlapping splits
+            (voxel-wise on a 60-case training validation split vs.
+            lesion-wise, gated, on a 293-case held-out test set) - shown as
+            two separate rows, never folded into one number, so "0.71"
+            can't be misread as the same kind of score as a voxel Dice. */}
         <Fact
-          label="Model holdout Dice"
-          value={t.model_holdout_dice != null ? `${t.model_holdout_dice} (model performance, not this scan's confidence)` : null}
+          label="Voxel Dice (validation)"
+          value={
+            t.model_voxel_dice != null
+              ? `${t.model_voxel_dice} — ${t.model_voxel_dice_n ?? "?"}-case training validation split`
+              : null
+          }
         />
+        <Fact
+          label="Lesion-wise Dice (held-out test)"
+          value={
+            t.model_holdout_dice != null
+              ? `${t.model_holdout_dice} — ${t.model_holdout_dice_n ?? "?"}-case held-out test, gated`
+              : null
+          }
+        />
+        {t.model_cohort_dice_range && (
+          <Fact
+            label="Range by tumour-type cohort"
+            value={`${t.model_cohort_dice_range[0]} – ${t.model_cohort_dice_range[1]} (model can't tell which cohort this scan is)`}
+          />
+        )}
         {/* Not a Fact row - this is a full cautionary sentence, not a
             short value, and was previously dominating the top of the
             panel by appearing instantly while everything else streamed. */}
@@ -240,11 +271,22 @@ function DefaultAnalysis({ data }) {
             <Seq text={t.scan_type_assumption} />
           </p>
         )}
-        {t.explanation && (
-          <p style={S.sectionText}>
-            <Seq text={t.explanation} />
-          </p>
-        )}
+        {/* explanation_by_category, not a single explanation string - the
+            model was trained on glioma + meningioma combined with no
+            tumor-type classification head, so Q1 explains both candidate
+            categories rather than picking one. */}
+        {t.explanation_by_category &&
+          Object.entries(t.explanation_by_category).map(
+            ([cat, text]) =>
+              text && (
+                <div key={cat} style={S.categoryBlock}>
+                  <p style={S.categoryLabel}>{cat}</p>
+                  <p style={S.sectionText}>
+                    <Seq text={text} />
+                  </p>
+                </div>
+              )
+          )}
       </Section>
 
       <Section number="2" title="How can it affect the brain/body?">
@@ -296,7 +338,15 @@ function DefaultAnalysis({ data }) {
       </Section>
 
       <Section number="5" title="What treatments are used?">
-        <CitedClaims data={tr} />
+        {/* treatment_information is now keyed by candidate category (same
+            reason as Q1 above) rather than one flat {claims,sources,
+            unsupported} object. */}
+        {Object.entries(tr).map(([cat, data]) => (
+          <div key={cat} style={S.categoryBlock}>
+            <p style={S.categoryLabel}>{cat}</p>
+            <CitedClaims data={data} />
+          </div>
+        ))}
       </Section>
     </>
   );
@@ -411,9 +461,9 @@ export default function EvidencePanel({ jobId, open = true }) {
         type="button"
         onClick={() => setDismissed(false)}
         style={S.reopenTab}
-        title="Show NeuroEvidence AI"
+        title="Show Lumenbrain AI"
       >
-        NeuroEvidence AI
+        Lumenbrain AI
       </button>
     );
   }
@@ -421,13 +471,13 @@ export default function EvidencePanel({ jobId, open = true }) {
   return (
     <aside style={S.drawer}>
       <div style={S.header}>
-        <h2 style={S.title}>NeuroEvidence AI</h2>
+        <h2 style={S.title}>Lumenbrain AI</h2>
         <button
           type="button"
           onClick={() => setDismissed(true)}
           style={S.closeBtn}
           title="Hide"
-          aria-label="Hide NeuroEvidence AI panel"
+          aria-label="Hide Lumenbrain AI panel"
         >
           ✕
         </button>
@@ -517,7 +567,7 @@ const S = {
   reopenTab: {
     position: "absolute",
     left: 24,
-    top: 60,
+    top: 92, // clears BrainViewer's back button (top:22) and hint line (top:56)
     padding: "9px 16px",
     borderRadius: 999,
     border: "1px solid rgba(79,216,255,0.3)",
@@ -586,6 +636,15 @@ const S = {
   sectionTextDim: { margin: "6px 0 0", fontSize: 11, lineHeight: 1.5, color: INK.dim },
   sectionMeta: { margin: "8px 0 4px", fontSize: 10.5, color: INK.dim, textTransform: "uppercase", letterSpacing: "0.03em" },
   bulletList: { margin: "4px 0 0", padding: "0 0 0 16px", fontSize: 12, lineHeight: 1.6, color: INK.text },
+  categoryBlock: { marginTop: 10 },
+  categoryLabel: {
+    margin: "0 0 4px",
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+    color: INK.dim,
+  },
 
   warningsBox: {
     marginBottom: 4,
@@ -626,6 +685,7 @@ const S = {
   claimList: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 12 },
   claimItem: { paddingBottom: 10, borderBottom: "1px solid rgba(79,216,255,0.08)" },
   claimText: { margin: 0, fontSize: 12.5, lineHeight: 1.55, color: INK.text },
+  claimWithheld: { margin: 0, fontSize: 12.5, lineHeight: 1.55, color: INK.dim, fontStyle: "italic" },
   noEvidence: { fontSize: 12, color: INK.dim, fontStyle: "italic" },
   citeRow: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 },
   citeTag: {
@@ -644,22 +704,6 @@ const S = {
     border: "1px solid rgba(224,179,77,0.35)",
     color: "#e0b34d",
   },
-  unsupportedBox: {
-    marginTop: 10,
-    padding: "8px 10px",
-    borderRadius: 3,
-    background: "rgba(255,138,156,0.06)",
-    border: "1px solid rgba(255,138,156,0.18)",
-  },
-  unsupportedLabel: {
-    display: "block",
-    fontSize: 9.5,
-    letterSpacing: "0.04em",
-    textTransform: "uppercase",
-    color: "#ff8a9c",
-    marginBottom: 4,
-  },
-  unsupportedText: { margin: "2px 0", fontSize: 11.5, lineHeight: 1.5, color: "#e0aab3" },
   turn: {
     marginTop: 16,
     paddingTop: 14,

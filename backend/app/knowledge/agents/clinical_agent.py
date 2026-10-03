@@ -6,9 +6,16 @@ every case, because no single MRI can answer either one, and that's not a
 retrieval gap to paper over — it's a structural fact about what a
 single-timepoint segmentation can know. See ASSESS_GROWTH / ASSESS_PROGNOSIS.
 
-One question (what is this tumor category, in general terms) gets a single
-unsourced LLM call — genuinely general classification-level education
-("what a glioma is"), not a specific medical claim someone could act on.
+One question (what is this tumor category, in general terms) gets an
+unsourced LLM call PER possible category — genuinely general
+classification-level education ("what a glioma is"), not a specific
+medical claim someone could act on. "Per possible category", not one
+call, because the 2026-10 retrain (inference.py's module docstring) has
+no classification head and was trained on BraTS-GLI + BraTS-PED (glioma,
+adult and pediatric) AND BraTS-MEN (meningioma) combined - there is no
+single "the category" to explain. Collapsing that into one vague blended
+answer, or silently picking the more common one, would both be a worse
+kind of dishonesty than just answering the question twice.
 
 The other two (how the location can affect the brain, what treatments are
 typically used) used to also be free-form, uncited LLM output under a
@@ -40,11 +47,20 @@ from app.knowledge.answering import LLMClient, _strip_code_fence  # reuse, don't
 from app.knowledge.cache import TTLCache
 from app.knowledge.phase1_bridge import extract_case_facts
 
-log = logging.getLogger("neuroevidence.knowledge")
+log = logging.getLogger("lumenbrain.knowledge")
 
-# category is almost always literally "Glioma" (this model has no other
-# training data - see _category_from_model), so this cache is a near-
-# guaranteed hit across every case after the first, the same way
+# The only two categories this checkpoint was ever trained on (see
+# inference.py's module docstring) - hardcoded, not inferred from a model
+# description string, because this is what the checkpoint IS, not a
+# guess. "Glioma" here covers both BraTS-GLI (adult) and BraTS-PED
+# (pediatric): the general-education explanation of "what a glioma is"
+# doesn't meaningfully differ by age group, so splitting those two would
+# just be two near-duplicate paragraphs, not more honesty. Meningioma is a
+# genuinely different disease family and gets its own.
+TRAINED_CATEGORIES = ["Glioma", "Meningioma"]
+
+# Every case runs both categories through this cache, so this is a
+# near-guaranteed hit after the first case of each kind, the same way
 # knowledge_routes.py's cache is for the treatment_information question.
 _tumor_explanation_cache = TTLCache()
 
@@ -117,31 +133,29 @@ STANDING_WARNINGS = [
 UNCERTAINTY_FLAG_THRESHOLD = 0.08
 
 
-def _category_from_model(model_desc: str) -> str:
-    model_desc = (model_desc or "").lower()
-    if "glioma" in model_desc:
-        return "Glioma"
-    return "Unknown (model description did not name a tumor category)"
-
-
-def _scan_type_assumption(category: str) -> str:
+def _scan_type_assumption() -> str:
     """NOT a "predicted category" - the model has four segmentation output
-    channels (TC/WT/ET/RC) and no classification head at all. "Glioma" is
-    true of every case because BraTS 2024 post-treatment GLI, the training
-    set, is glioma-only - the model would say the same thing about a
-    meningioma or a metastasis. Reporting that as a "prediction" is exactly
-    the failure mode spec §7 was written about: a property of the training
-    data, presented as a finding about this scan."""
-    if category == "Glioma":
-        return (
-            "Glioma. The segmentation model was trained only on "
-            "post-treatment glioma and has no tumor-type classification "
-            "head — it cannot distinguish glioma from meningioma, "
-            "metastasis, or any other tumor type. This is a scan-type "
-            "assumption inherited from training data, not a prediction "
-            "about this scan."
-        )
-    return category
+    channels (TC/WT/ET/RC) and no classification head at all. It was
+    trained on three cohorts combined - adult post-treatment glioma,
+    meningioma, and pediatric glioma (see TRAINED_CATEGORIES's docstring
+    for why the explanation text only generates for two: pediatric glioma
+    gets folded into "Glioma" there since the general education content
+    doesn't differ by age group) - so it would produce a segmentation for
+    any of the three - or for a metastasis, or anything else - without any
+    way to say which. This sentence must name all three cohorts explicitly,
+    even though TRAINED_CATEGORIES has two entries: collapsing pediatric
+    glioma out of the scan-type assumption itself (as opposed to out of the
+    educational text) would hide that it's a real, distinct possibility
+    with its own holdout performance (see cohort_dice_range)."""
+    return (
+        "Adult post-treatment glioma, meningioma, or pediatric glioma. The "
+        "segmentation model was trained on these three tumor-type cohorts "
+        "combined and has no tumor-type "
+        f"classification head — it cannot tell you which one (if any) "
+        f"this scan actually is, or distinguish any of them from a "
+        f"metastasis or any other tumor type. This is a scan-type assumption "
+        f"inherited from training data, not a prediction about this scan."
+    )
 
 
 def _generate_tumor_explanation(category: str, client: LLMClient) -> str:
@@ -238,6 +252,35 @@ def _segmentation_confidence(facts: dict) -> tuple[dict, list[str]]:
         if unc >= UNCERTAINTY_FLAG_THRESHOLD
     ]
 
+    # RC (resection cavity) ground truth exists only in the BraTS-GLI
+    # training cohort - BraTS-MEN/BraTS-PED's own labeling protocols never
+    # define an RC class, so the model's RC output for those cases was
+    # never checked against anything during training or evaluation (see
+    # meshing.py's RC_VALIDATED_COHORTS_ONLY). This is not just "unmeasured
+    # elsewhere" - test_lesionwise.csv's "gate tau=0.6 (single)" rows show
+    # the model actively over-predicts RC outside BraTS-GLI: 113 spurious
+    # RC components on the meningioma test cases and 13 on pediatric-glioma,
+    # both against zero RC ground truth there (that labeling protocol has
+    # no RC class at all). The shipped gate removes most of these (113->11
+    # on meningioma, 13->0 on pediatric) but not all of them on meningioma.
+    # Pooled RC lesion precision is 0.254 unfiltered, 0.813 gated - almost
+    # all of that gated precision comes from the adult-glioma cases (0.925
+    # there) propped up against the 11 meningioma false positives that
+    # survive the gate. There's no way to know which cohort THIS case
+    # resembles, so this note only fires when RC was actually predicted -
+    # no sense warning about a region that isn't even present.
+    if "RC" in facts["regions"]:
+        notes.append(
+            "Resection cavity (RC) is over-predicted by this model outside "
+            "the adult post-treatment glioma cohort it was validated "
+            "against — on the held-out test set, the gate still let "
+            "through RC false positives on meningioma scans (none had a "
+            "real resection cavity to find). If this case is a meningioma "
+            "or a pediatric glioma, the predicted RC region is more likely "
+            "to be a false positive than a real cavity, not merely "
+            "unverified."
+        )
+
     summary = {
         "region_uncertainty": {k: round(v, 4) for k, v in region_uncertainty.items()},
         "flag_threshold": UNCERTAINTY_FLAG_THRESHOLD,
@@ -261,34 +304,50 @@ def run_default_analysis(
     specifically no longer come from a free-form LLM call.
     """
     facts = extract_case_facts(case)
-    category = _category_from_model(facts["model"])
     locations = facts["locations"]
     confidence, confidence_notes = _segmentation_confidence(facts)
 
-    # Three independent, network-bound calls (LLM / retrieval+LLM) with no
-    # data dependency between them - run them concurrently rather than
-    # paying their latency three times in a row. Threads, not asyncio: the
-    # LLM/retrieval clients called here are synchronous.
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        tumor_future = pool.submit(_generate_tumor_explanation, category, client)
+    # One tumor-explanation call and one treatment retrieval PER trained
+    # category, plus the one brain-effects call - all independent of each
+    # other, run concurrently rather than paying each latency in turn.
+    # Threads, not asyncio: the LLM/retrieval clients called here are
+    # synchronous.
+    with ThreadPoolExecutor(max_workers=2 * len(TRAINED_CATEGORIES) + 1) as pool:
+        tumor_futures = {
+            cat: pool.submit(_generate_tumor_explanation, cat, client)
+            for cat in TRAINED_CATEGORIES
+        }
+        treatment_futures = {
+            cat: pool.submit(retrieve_fn, _treatment_question(cat))
+            for cat in TRAINED_CATEGORIES
+        }
         brain_future = pool.submit(retrieve_fn, _brain_effects_question(locations))
-        treatment_future = pool.submit(retrieve_fn, _treatment_question(category))
 
-        tumor_explanation = tumor_future.result()
+        tumor_explanations = {cat: f.result() for cat, f in tumor_futures.items()}
+        treatment_cited = {cat: f.result() for cat, f in treatment_futures.items()}
         brain_effects_cited = brain_future.result()
-        treatment_cited = treatment_future.result()
 
     tumor_analysis = {
         "tumor_detected": facts["tumor_detected"],
-        "scan_type_assumption": _scan_type_assumption(category),
+        "scan_type_assumption": _scan_type_assumption(),
         # Explicitly the whole-tumor region — see phase1_bridge.py's
         # extract_case_facts, which derives this from WT_cc specifically.
         # TC/ET/RC volumes are different numbers; a bare "tumor volume"
         # label invites a reader to assume whichever region they habitually
         # mean.
         "whole_tumor_volume_cc": facts["total_volume_cc"],
+        # Two different metrics, two different splits - see
+        # phase1_bridge.py's describe_case_for_prompt docstring. Keep both
+        # labeled sizes attached so a renderer can't present either number
+        # without saying what it was actually measured on.
+        "model_voxel_dice": facts["voxel_dice"],
+        "model_voxel_dice_n": facts["validation_set_size"],
         "model_holdout_dice": facts["holdout_dice"],
-        "explanation": tumor_explanation,
+        "model_holdout_dice_n": facts["holdout_set_size"],
+        "model_cohort_dice_range": facts["cohort_dice_range"],
+        # One explanation per possible category, not one blended
+        # paragraph - see _scan_type_assumption / module docstring for why.
+        "explanation_by_category": tumor_explanations,
     }
 
     brain_effects = {"locations": locations, **brain_effects_cited}

@@ -33,7 +33,7 @@ from app.knowledge.ingest.common import RawSection
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 BIOC_BASE = "https://www.ncbi.nlm.nih.gov/research/bionlp/RESTful/pmcoa.cgi"
-TOOL_NAME = "neuroevidence-phase3"
+TOOL_NAME = "lumenbrain-phase3"
 
 # BioC section_type codes that are administrative scaffolding, not prose —
 # mirrors the _SKIP_HEADINGS filter in nci_pdq.py for the same reason.

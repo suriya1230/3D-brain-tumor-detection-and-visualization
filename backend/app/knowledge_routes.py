@@ -45,7 +45,7 @@ from app.knowledge.schema import Answer
 from app.knowledge.web_search import search_web
 from app.knowledge.validator import apply_citation_policy, apply_evidence_validator
 
-log = logging.getLogger("neuroevidence.knowledge")
+log = logging.getLogger("lumenbrain.knowledge")
 router = APIRouter(prefix="/api/cases", tags=["knowledge"])
 
 JOBS = Path(os.getenv("JOB_DIR", Path(__file__).resolve().parent.parent / "jobs"))
@@ -149,17 +149,21 @@ def _rewrite_client_singleton():
     return _rewrite_client
 
 
-# Phase 4's model only ever assumes "glioma" broadly (no classification
-# head - see clinical_agent.py's _scan_type_assumption), so there's no
-# specific WHO subtype id to INCLUDE-filter on - but these three ARE
-# definitely not what it's describing. A 2026-09 review caught metastasis-
-# specific management advice (corticosteroids/anticonvulsants framed for
-# brain metastases, whole-brain radiotherapy) getting cited into a glioma
-# report; excluding these categories from Q2/Q5's retrieval is the filter
-# that's actually available. Does NOT reach web search results below -
-# Tavily has no tumour-type metadata to filter on, so that residual path
-# still depends on the query itself being specific enough.
-NON_GLIOMA_TUMOUR_TYPES = ["brain_metastasis", "leptomeningeal_metastasis", "meningioma"]
+# The 2026-10 retrain (see inference.py's module docstring) was trained on
+# BraTS-GLI + BraTS-MEN + BraTS-PED combined - glioma (adult or pediatric)
+# AND meningioma are both now genuinely in scope, so meningioma was removed
+# from this list. Metastases were never part of any training cohort, so
+# they stay excluded: there's still no specific WHO subtype id to
+# INCLUDE-filter on (no classification head - see clinical_agent.py's
+# _scan_type_assumption), but these ARE definitely not what the model is
+# describing. A 2026-09 review caught metastasis-specific management
+# advice (corticosteroids/anticonvulsants framed for brain metastases,
+# whole-brain radiotherapy) getting cited into a report for this model's
+# predecessor; excluding these categories from Q2/Q5's retrieval is the
+# filter that's actually available. Does NOT reach web search results
+# below - Tavily has no tumour-type metadata to filter on, so that
+# residual path still depends on the query itself being specific enough.
+NON_TRAINED_TUMOUR_TYPES = ["brain_metastasis", "leptomeningeal_metastasis"]
 
 
 def _gather_passages(
@@ -376,16 +380,19 @@ def explain_case(job_id: str):
     generated automatically for every case. Two (growth duration, survival)
     are hardcoded rather than ever asked of the model; two (brain effects,
     treatment) go through the same citation-gated retrieval pipeline as
-    /ask via _cited_answer; one (what the tumor category generally means)
-    is a single unsourced LLM call for genuinely general classification-
-    level education. See app/knowledge/agents/clinical_agent.py.
+    /ask via _cited_answer, run once per possible tumor category (this
+    model has no classification head and was trained on glioma AND
+    meningioma combined, so both are covered rather than guessing one);
+    one (what each possible category generally means) is an unsourced LLM
+    call per category for genuinely general classification-level
+    education. See app/knowledge/agents/clinical_agent.py.
     """
     case = _load_case(job_id)
-    # Bakes in the glioma-only exclusion (see NON_GLIOMA_TUMOUR_TYPES)
+    # Bakes in the not-trained-on-this exclusion (see NON_TRAINED_TUMOUR_TYPES)
     # before handing this to clinical_agent.py, which doesn't need to know
     # tumour-type filtering exists at all - it just calls retrieve_fn(question).
     retrieve_fn = lambda question: _cited_answer(  # noqa: E731
-        question, exclude_tumour_types=NON_GLIOMA_TUMOUR_TYPES
+        question, exclude_tumour_types=NON_TRAINED_TUMOUR_TYPES
     )
     return run_default_analysis(case, _llm_client_singleton(), retrieve_fn)
 

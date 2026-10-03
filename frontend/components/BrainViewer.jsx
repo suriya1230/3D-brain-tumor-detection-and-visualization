@@ -5,6 +5,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
+import AssetBoundary from "./AssetBoundary";
 import { Dust, NeuralNodes, Synapses, ensureNormals, useFresnel } from "./brainVisuals";
 import EvidencePanel from "./EvidencePanel";
 import { INK, REGION } from "./theme";
@@ -174,25 +175,6 @@ function Tumours({ url, shown }) {
   );
 }
 
-/* ----------------------------------------------------------- error guard */
-// A malformed .glb throws inside Suspense, which without a boundary unmounts
-// the whole page including the panel that would explain the failure.
-class AssetBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { failed: false };
-  }
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  componentDidCatch(err) {
-    this.props.onError?.(err?.message || "could not load the 3D assets");
-  }
-  render() {
-    return this.state.failed ? null : this.props.children;
-  }
-}
-
 function Rig({ radius }) {
   const { camera } = useThree();
 
@@ -273,7 +255,11 @@ export default function BrainViewer({ meta, brainUrl, tumorUrl, onNewCase }) {
           makeDefault
           enablePan
           enableDamping
-          dampingFactor={0.08}
+          // 0.08 let a manual drag's momentum coast for seconds after
+          // release - easy to mistake for "auto-rotate is stuck on" when
+          // it's really just slow-decaying inertia from the last drag,
+          // not the autoRotate prop below. Higher = faster decay.
+          dampingFactor={0.25}
           autoRotate={spin}
           autoRotateSpeed={0.55}
           minDistance={radius * 1.15}
@@ -296,7 +282,7 @@ export default function BrainViewer({ meta, brainUrl, tumorUrl, onNewCase }) {
 
         <h1 style={S.caseId}>{meta.case_id}</h1>
         <p style={S.sub}>
-          SegResNet · {meta.checkpoint} · {meta.elapsed_s}s
+          DynUNet · {meta.checkpoint} · {meta.elapsed_s}s
         </p>
 
         {meta.derived?.WT_cc != null && (
@@ -380,15 +366,25 @@ export default function BrainViewer({ meta, brainUrl, tumorUrl, onNewCase }) {
 }
 
 function Btn({ on, onClick, children }) {
+  // The "off" look used to be a translucent cyan fill + bright cyan
+  // border - visually too close to the "on" state's solid cyan fill,
+  // especially against this dark scene, so a toggle at rest read as
+  // "already engaged" at a glance. Off now uses INK.dim (a desaturated
+  // blue-gray) throughout, so the bright cyan fill is reserved
+  // exclusively for "this is actually on" - the only unambiguous signal
+  // in the toolbar. Plain action buttons (Reset view, Fullscreen) pass
+  // no `on` prop, so they get this same calm/neutral look, which is
+  // correct for them too - they're not toggles, so they should never
+  // look "engaged" either.
   return (
     <button
       onClick={onClick}
       aria-pressed={on === undefined ? undefined : on}
       style={{
         ...S.btn,
-        color: on ? INK.void : INK.text,
-        background: on ? INK.brain : "rgba(79,216,255,0.06)",
-        borderColor: on ? INK.brain : "rgba(79,216,255,0.28)",
+        color: on ? INK.void : INK.dim,
+        background: on ? INK.brain : "rgba(93,127,146,0.08)",
+        borderColor: on ? INK.brain : "rgba(93,127,146,0.35)",
       }}
     >
       {children}

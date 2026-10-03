@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import AssetBoundary from "@/components/AssetBoundary";
 import BrainViewer from "@/components/BrainViewer";
 import HeroBrain from "@/components/HeroBrain";
 import UploadPanel from "@/components/UploadPanel";
@@ -77,7 +78,7 @@ const EVIDENCE_STATS = [
 const RESEARCH_POINTS = [
   {
     title: "Segmentation model",
-    body: "SegResNet (MONAI), trained on BraTS 2024 post-treatment glioma cases. Holdout-set Dice 0.8018 on 150 held-out patients — a property of the model, reported as such, never rephrased as this scan's confidence.",
+    body: "DynUNet (MONAI), trained on BraTS 2024 glioma, meningioma, and pediatric-glioma cases combined, with a post-hoc learned gate filtering predictions. Holdout-set Dice 0.7106 on 293 held-out patients — a property of the model, reported as such, never rephrased as this scan's confidence.",
   },
   {
     title: "Retrieval, measured not assumed",
@@ -98,7 +99,7 @@ const STEPS = [
   {
     n: "02",
     title: "3D segmentation",
-    body: "A SegResNet model finds the resection cavity and FLAIR hyperintensity, rendered in an interactive 3D viewer.",
+    body: "A DynUNet model finds the resection cavity and FLAIR hyperintensity, rendered in an interactive 3D viewer.",
   },
   {
     n: "03",
@@ -140,7 +141,7 @@ export default function LandingPage() {
 
       <header style={S.heroFull}>
         <nav style={S.nav}>
-          <div style={S.logo}>NeuroEvidence</div>
+          <div style={S.logo}>Lumenbrain</div>
           <div style={S.navLinks}>
             {NAV_LINKS.map((l) => (
               <a key={l.href} href={l.href} style={S.navLink}>
@@ -154,7 +155,13 @@ export default function LandingPage() {
         </nav>
 
         <div style={S.heroVisual}>
-          <HeroBrain />
+          {/* Decorative only - if the borrowed brain.glb fails to load
+              (network hiccup, CORS, backend restart mid-fetch), this must
+              degrade to an empty hero background, not take the rest of the
+              landing page's cards down with it. See AssetBoundary.jsx. */}
+          <AssetBoundary>
+            <HeroBrain />
+          </AssetBoundary>
         </div>
 
         <div style={S.heroContent}>
@@ -233,13 +240,13 @@ export default function LandingPage() {
       <section id="upload" style={S.uploadSection}>
         <h2 style={S.uploadHeading}>Start a segmentation</h2>
         <p style={S.uploadSubtext}>
-          Runs the same SegResNet model described above, right in your browser session.
+          Runs the same DynUNet model described above, right in your browser session.
         </p>
         <UploadPanel onResult={setResult} />
       </section>
 
       <footer style={S.footer}>
-        <span>© 2026 NeuroEvidence. All rights reserved.</span>
+        <span>© 2026 Lumenbrain. All rights reserved.</span>
         <span style={S.footerDivider}>·</span>
         <span>
           Suriya, AI Researcher —{" "}

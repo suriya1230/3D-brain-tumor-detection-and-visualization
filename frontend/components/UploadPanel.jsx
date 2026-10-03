@@ -182,9 +182,9 @@ export default function UploadPanel({ onResult }) {
         )}
 
         <p style={S.foot}>
-          SegResNet trained on BraTS 2024 post-treatment glioma. Selection Dice
-          0.8018 on 150 held-out patients. Research use only, not for
-          diagnosis.
+          DynUNet trained on BraTS 2024 glioma, meningioma, and pediatric
+          glioma combined. Selection Dice 0.7106 on 293 held-out patients.
+          Research use only, not for diagnosis.
         </p>
       </div>
     </div>

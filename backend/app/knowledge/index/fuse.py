@@ -83,7 +83,7 @@ def hybrid_search(
         # subtype id, so there's no single tumour_type value to include
         # on. Excluding the tumour types this case definitely ISN'T
         # (metastasis, meningioma) is the filter that's actually available
-        # - see knowledge_routes.py's NON_GLIOMA_TUMOUR_TYPES.
+        # - see knowledge_routes.py's NON_TRAINED_TUMOUR_TYPES.
         if exclude_tumour_types and any(t in chunk.tumour_types for t in exclude_tumour_types):
             continue
         results.append(chunk)

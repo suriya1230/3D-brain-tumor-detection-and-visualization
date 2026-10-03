@@ -1,5 +1,5 @@
 """
-NeuroEvidence inference API.
+Lumenbrain inference API.
 
     POST /api/predict            four NIfTI files -> metadata + asset URLs
     GET  /api/jobs/{id}/brain.glb
@@ -32,28 +32,36 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-7s %(name)s  %(message)s",
 )
-log = logging.getLogger("neuroevidence")
+log = logging.getLogger("lumenbrain")
 
 BASE = Path(__file__).resolve().parent.parent
 JOBS = Path(os.getenv("JOB_DIR", BASE / "jobs"))
 JOBS.mkdir(parents=True, exist_ok=True)
 
+# best_lesion.pt first: the 2026-10 retrain's own notebook selects it as
+# THE evaluation checkpoint (best epoch by lesion-wise Dice, not just
+# voxel-wise) - every reported metric in the notebook runs through this
+# checkpoint, not best_weights.pt (a superseded, 15-epochs-earlier snapshot
+# by the notebook's own lesion-wise criterion). See inference.py's module
+# docstring.
 CKPT = os.getenv("CKPT_PATH") or next(
     (str(BASE / "models" / n)
-     for n in ("best_weights.pt", "best.pt")
+     for n in ("best_lesion.pt", "best_weights.pt", "best.pt")
      if (BASE / "models" / n).exists()),
-    str(BASE / "models" / "best_weights.pt"),
+    str(BASE / "models" / "best_lesion.pt"),
 )
 
 MAX_MB = int(os.getenv("MAX_UPLOAD_MB", "400"))
 SW_OVERLAP = float(os.getenv("SW_OVERLAP", "0.5"))
 ALLOWED_SUFFIX = (".nii", ".nii.gz")
 
-app = FastAPI(title="NeuroEvidence", version="1.0")
+app = FastAPI(title="Lumenbrain", version="1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv(
-        "ALLOW_ORIGINS", "http://localhost:3001,http://127.0.0.1:3001"
+        "ALLOW_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "http://localhost:3001,http://127.0.0.1:3001",
     ).split(","),
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
@@ -84,6 +92,8 @@ def health():
     if _segmenter:
         body["epoch"] = _segmenter.epoch
         body["validation_select_dice"] = round(_segmenter.val_dice, 4)
+        body["validation_lesion_dice"] = round(_segmenter.lesion_dice, 4)
+        body["component_gate_active"] = _segmenter.gate is not None
     return body
 
 
@@ -137,6 +147,15 @@ async def predict(
 
         log.info("job %s: predicting %s", job_id, name)
         pred = segmenter().predict(paths, sw_overlap=SW_OVERLAP)
+
+        # TEMPORARY debug hook (remove after the brain-mask investigation
+        # is done) - the raw T1 upload is never otherwise retained past
+        # this request, which made the BraTS-PED/MEN oversized-brain-shell
+        # bug impossible to inspect after the fact. Gated behind an env
+        # var so it never silently persists patient-shaped data by default.
+        if os.getenv("DEBUG_SAVE_T1") == "1":
+            import nibabel as _nib
+            _nib.save(_nib.Nifti1Image(pred.t1n, pred.affine), str(job_dir / "_debug_t1n.nii.gz"))
 
         brain_glb, tumor_glb, meta = build_assets(pred, name)
         (job_dir / "brain.glb").write_bytes(brain_glb)

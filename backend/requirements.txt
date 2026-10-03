@@ -22,3 +22,14 @@ trimesh==4.5.3
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 python-multipart==0.0.19
+
+# component_gate.joblib (the per-lesion accept/reject classifier shipped
+# alongside the 2026-10 GLI+MEN+PED retrain) was pickled under exactly
+# scikit-learn 1.6.1 - confirmed by loading it with 1.5.2/1.6.1/1.7.2/1.8.0
+# and checking for sklearn's own InconsistentVersionWarning: only 1.6.1
+# loads with zero warnings. Newer versions load it anyway (sklearn keeps
+# some backward read-compatibility) but print "might lead to breaking
+# code or invalid results" - not a risk worth taking for a classifier that
+# gates what segmentation output a clinician sees. Pin exactly, don't float.
+scikit-learn==1.6.1
+joblib==1.6.0

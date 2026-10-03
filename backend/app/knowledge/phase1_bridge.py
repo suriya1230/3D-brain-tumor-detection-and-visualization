@@ -28,21 +28,53 @@ def describe_case_for_prompt(case: dict) -> list[str]:
       predicted region is not a calibrated confidence that the finding is
       correct, and spec §7 says it "should never appear as '96%
       confidence'" in generated text.
-    - holdout_select_dice: included only as model provenance ("this model's
-      general performance on its holdout set"), never rephrased as
-      per-case confidence.
+    - holdout_select_dice / validation_select_dice: both included only as
+      model provenance, never rephrased as per-case confidence - and never
+      collapsed into each other. They are two different metrics (lesion-wise
+      vs voxel-wise) measured on two different, non-overlapping splits (a
+      293-case held-out test set vs. the 60-case split used during training
+      to pick the checkpoint) - stating one without the other, or implying
+      they're the same number, is exactly the kind of average-away-the-
+      caveat move spec §7 exists to prevent.
+    - cohort_holdout_dice: reported as a range, not pooled into one number,
+      because the model has no classification head - it cannot tell you
+      which training cohort a scan resembles, and performance differs a lot
+      by cohort (see clinical_agent.py's TRAINED_CATEGORIES).
     """
     lines: list[str] = []
 
     model = case.get("model", "unknown segmentation model")
-    holdout_dice = case.get("holdout_select_dice")
-    if holdout_dice is not None:
-        lines.append(
-            f"Segmentation model: {model}. Its holdout-set Dice score is "
-            f"{holdout_dice:.3f} — a general property of the model's "
-            f"validated performance, not a confidence figure for this "
-            f"specific scan."
+    voxel_dice = case.get("validation_select_dice")
+    voxel_n = case.get("validation_set_size")
+    lesion_dice = case.get("holdout_select_dice")
+    lesion_n = case.get("holdout_set_size")
+    cohort_dice = (case.get("confidence") or {}).get("cohort_holdout_dice") or {}
+
+    if voxel_dice is not None or lesion_dice is not None:
+        parts = [f"Segmentation model: {model}."]
+        if voxel_dice is not None:
+            parts.append(
+                f"Voxel-wise Dice (TC/WT/ET), measured on the "
+                f"{voxel_n}-case training validation split: {voxel_dice:.3f}."
+            )
+        if lesion_dice is not None:
+            parts.append(
+                f"Lesion-wise Dice (components, gated), measured separately "
+                f"on a {lesion_n}-case held-out test set: {lesion_dice:.3f}."
+            )
+        if cohort_dice:
+            lo, hi = min(cohort_dice.values()), max(cohort_dice.values())
+            parts.append(
+                f"Lesion-wise Dice ranges {lo:.2f}-{hi:.2f} depending on "
+                f"which training cohort (adult glioma / meningioma / "
+                f"pediatric glioma) the scan resembles — there is no "
+                f"classification head, so which one applies here is unknown."
+            )
+        parts.append(
+            "These are general properties of the model's validated "
+            "performance, not confidence figures for this specific scan."
         )
+        lines.append(" ".join(parts))
 
     for key, region in (case.get("regions") or {}).items():
         parts = [f"Region {key}"]
@@ -62,17 +94,34 @@ def extract_case_facts(case: dict) -> dict:
     """Structured version of describe_case_for_prompt(), for callers that
     build JSON directly instead of a prompt string (app/knowledge/agents/
     clinical_agent.py). Same safety rules apply: mean_probability is never
-    included, holdout_dice is model provenance only.
+    included, the Dice fields are model provenance only - and voxel_dice /
+    holdout_dice must stay labeled as the two different metrics on two
+    different splits that they are (see describe_case_for_prompt's
+    docstring).
     """
     regions = case.get("regions") or {}
     total_volume = (case.get("derived") or {}).get("WT_cc")
     if total_volume is None and regions:
         total_volume = round(sum(r.get("volume_cc", 0) or 0 for r in regions.values()), 2)
 
+    cohort_dice = (case.get("confidence") or {}).get("cohort_holdout_dice") or {}
+
     return {
         "tumor_detected": bool(regions),
         "model": case.get("model", "unknown segmentation model"),
+        # Lesion-wise, gated, pooled across cohorts - measured on the
+        # 293-case held-out TEST set.
         "holdout_dice": case.get("holdout_select_dice"),
+        "holdout_set_size": case.get("holdout_set_size"),
+        # Voxel-wise (TC/WT/ET) - measured on the 60-case training
+        # VALIDATION split, NOT the same set or the same metric as
+        # holdout_dice above. Never average or display these as one number.
+        "voxel_dice": case.get("validation_select_dice"),
+        "validation_set_size": case.get("validation_set_size"),
+        "cohort_dice_range": (
+            [round(min(cohort_dice.values()), 4), round(max(cohort_dice.values()), 4)]
+            if cohort_dice else None
+        ),
         "total_volume_cc": total_volume,
         "regions": {
             key: {

@@ -27,7 +27,7 @@ import threading
 
 from app.knowledge.schema import Answer, Chunk
 
-log = logging.getLogger("neuroevidence.knowledge")
+log = logging.getLogger("lumenbrain.knowledge")
 
 try:
     from lettucedetect.models.inference import HallucinationDetector

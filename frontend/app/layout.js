@@ -1,9 +1,9 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "NeuroEvidence - 3D tumour viewer",
+  title: "Lumenbrain - 3D tumour viewer",
   description:
-    "Upload brain MRI and view SegResNet tumour segmentation in 3D. Research use only.",
+    "Upload brain MRI and view DynUNet tumour segmentation in 3D. Research use only.",
 };
 
 export default function RootLayout({ children }) {

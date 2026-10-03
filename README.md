@@ -1,4 +1,4 @@
-# NeuroEvidence
+# Lumenbrain
 
 An AI-assisted pipeline for glioma MRI: upload four co-registered brain MRI
 volumes, get a 3D tumour segmentation, and get that segmentation explained
@@ -21,7 +21,7 @@ model asked to do both:
 
 2. **What does this finding mean, clinically?** A language model answering
    from its own weights can sound confident and still be wrong, and there is
-   no way for a clinician to check which. NeuroEvidence's evidence agent
+   no way for a clinician to check which. Lumenbrain's evidence agent
    never answers a clinical question from memory — every claim either cites
    a specific passage from NCI PDQ / PubMed / PMC / a domain-restricted web
    search, or is explicitly listed as not addressed by the current evidence.
@@ -47,7 +47,7 @@ Next.js  (localhost:3001)
   ▼
 FastAPI  (localhost:8000)
   │
-  ├─ inference.py    RAS → 1 mm → crop → normalise → SegResNet, 4-pass TTA
+  ├─ inference.py    RAS → 1 mm → crop → normalise → DynUNet, TTA, component gate
   ├─ meshing.py       label map → marching cubes → brain.glb + tumor.glb
   │                   + per-region confidence (see below)
   ▼
@@ -75,8 +75,9 @@ three.js viewer  ──┐
 ## Technology used
 
 **Segmentation (backend, Phase 1)**
-- [MONAI](https://monai.io/) `SegResNet` (3D CNN), PyTorch, trained on BraTS
-  2024 post-treatment glioma
+- [MONAI](https://monai.io/) `DynUNet` (nnU-Net-style 3D CNN), PyTorch,
+  trained on BraTS 2024 GLI+MEN+PED combined (adult glioma, meningioma,
+  pediatric glioma), plus a post-hoc learned component gate
 - `nibabel` / `scipy.ndimage` / `scikit-image` (marching cubes) / `trimesh`
   for MRI → 3D mesh conversion
 - FastAPI serving `.glb` meshes and JSON metadata
@@ -118,9 +119,10 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Copy `best_weights.pt` (75 MB) from your Kaggle download into
-`backend/models/`. If it downloaded as `best_weights (1).pt`, rename it —
-the space and parentheses break path handling.
+Copy `best_lesion.pt` (132 MB) and `component_gate.joblib` from your Kaggle
+download into `backend/models/`. If a filename downloaded with a stray space
+or parentheses (e.g. `best_lesion (1).pt`), rename it — those break path
+handling.
 
 ```bash
 uvicorn app.main:app --reload --port 8000
@@ -129,7 +131,7 @@ uvicorn app.main:app --reload --port 8000
 Check it: <http://localhost:8000/api/health>
 
 ```json
-{ "status": "ok", "checkpoint": "best_weights.pt", "checkpoint_present": true }
+{ "status": "ok", "checkpoint": "best_lesion.pt", "checkpoint_present": true, "component_gate_active": true }
 ```
 
 The checkpoint loads lazily on the first prediction, so `device` reads
@@ -316,7 +318,7 @@ a structural fact about what one segmentation of one scan can support.
 This is applied engineering with real measured evaluation (holdout Dice,
 retrieval Recall@20, citation precision, faithfulness, abstention rate on a
 40-question hand-written eval set) — not a peer-reviewed novel research
-contribution, and the individual components (SegResNet, hybrid RAG,
+contribution, and the individual components (DynUNet, hybrid RAG,
 biomedical embeddings) are established techniques, not new ones. Prior art
 exists for both halves separately (e.g. BraTS Toolkit for segmentation +
 3D visualization, guideline-grounded oncology RAG chatbots for the evidence
@@ -337,18 +339,41 @@ that way, and never commit it.
 
 ## Model provenance
 
-SegResNet (MONAI), `init_filters=32`, `blocks_down=(1,2,2,4)`. Trained on 549
-cases from 256 patients for 200 epochs; best checkpoint at epoch 160, selected
-by mean Dice over TC, WT and ET.
+DynUNet (MONAI, nnU-Net-style encoder-decoder; see
+`backend/models/traning-notebook.ipynb`), trained on three BraTS 2024 cohorts
+combined — BraTS-GLI (adult glioma), BraTS-MEN (meningioma) and BraTS-PED
+(pediatric glioma) — with no tumor-type classification head. Best checkpoint
+selected on mean Dice over TC/WT/ET at epoch 96 (of 110); a separate
+best-lesion-wise checkpoint was tracked independently (epoch 111).
 
-Evaluated on 150 cases from patients disjoint from training at both case and
-patient level (`backend/models/test_metrics.csv`):
+The raw model's voxel-wise output is substantially worse pooled across three
+cohorts than the old single-cohort model was on glioma alone, so a learned
+per-lesion "component gate" (`HistGradientBoostingClassifier`,
+`backend/models/component_gate.joblib`) filters predicted connected
+components post-hoc before meshing — see `backend/app/inference.py`'s module
+docstring for why this gate is mandatory, not optional, overhead.
 
-| region | Dice | IoU | HD95 |
-| --- | --- | --- | --- |
-| WT | 0.8519 | 0.7708 | 8.86 mm |
-| TC | 0.7913 | 0.6890 | 8.28 mm |
-| ET | 0.7816 | 0.6770 | 8.00 mm |
-| RC | 0.6237 | 0.5240 | 15.31 mm |
+Evaluated on 293 held-out cases, disjoint from training at the patient level
+(`backend/models/test_lesionwise.csv`), lesion-wise Dice after gating:
 
-Selection Dice (mean of TC/WT/ET at the selected checkpoint): 0.8018.
+| region | Dice (gated) | Dice (ungated) |
+| --- | --- | --- |
+| WT | 0.7504 | 0.5062 |
+| TC | 0.7045 | 0.5548 |
+| ET | 0.6768 | 0.5282 |
+| RC | 0.4584 | 0.2622 |
+
+Selection Dice (mean of TC/WT/ET, gated, pooled across cohorts): 0.7106.
+
+Per-cohort pooled Dice (gated) — note the spread; this is three different
+tasks pooled into one number above, not one task evaluated three times:
+
+| cohort | Dice |
+| --- | --- |
+| BraTS-MEN (meningioma) | 0.8065 |
+| BraTS-GLI (adult glioma) | 0.6354 |
+| BraTS-PED (pediatric glioma) | 0.6292 |
+
+RC (resection cavity) was only present/validated against ground truth in the
+BraTS-GLI cohort — treat RC predictions on meningioma or pediatric-glioma
+scans with extra caution.

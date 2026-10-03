@@ -1,0 +1,5 @@
+{
+  "best_vol_thresh": 1600,
+  "best_gate_tau": 0.6,
+  "gate_cases": 259
+}

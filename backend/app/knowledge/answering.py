@@ -25,13 +25,13 @@ from openai import RateLimitError
 
 from app.knowledge.schema import Answer, Chunk, Citation, Claim
 
-log = logging.getLogger("neuroevidence.knowledge")
+log = logging.getLogger("lumenbrain.knowledge")
 
 MAX_PASSAGES = 8  # spec §5: "pass 6-8 to the LLM"
 MAX_PASSAGE_CHARS = 2000  # keeps the prompt bounded even for long chunks
 
 SYSTEM_PROMPT = """\
-You are a clinical evidence retrieval assistant for NeuroEvidence. You are \
+You are a clinical evidence retrieval assistant for Lumenbrain. You are \
 not a diagnostic tool and you do not supply medical facts from your own \
 knowledge — you only summarize the passages you are given below.
 
